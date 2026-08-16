@@ -1,0 +1,386 @@
+/* CSS Inspector - Content Script Styles */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --css-peeper-bg: rgba(255, 255, 255, 0.95); /* White glass */
+  --css-peeper-border: rgba(0, 0, 0, 0.08);
+  --css-peeper-text: #111827; /* Dark gray for text */
+  --css-peeper-text-muted: #6b7280; /* Medium gray for labels */
+  --css-peeper-accent: #3b82f6;
+  --css-peeper-z: 2147483647;
+}
+
+/* Hover Overlays Container */
+#css-peeper-overlay-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: calc(var(--css-peeper-z) - 1);
+  display: none;
+}
+
+#css-peeper-overlay-container.active {
+  display: block;
+}
+
+#css-peeper-overlay-margin,
+#css-peeper-overlay-padding,
+#css-peeper-overlay-content {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  transition: all 0.05s linear;
+}
+
+#css-peeper-overlay-margin {
+  border-style: solid;
+  border-color: rgba(249, 204, 157, 0.6); /* Margin orange */
+}
+
+#css-peeper-overlay-padding {
+  border-style: solid;
+  border-color: rgba(195, 218, 175, 0.6); /* Padding green */
+}
+
+#css-peeper-overlay-content {
+  background-color: rgba(160, 196, 255, 0.6); /* Content blue */
+}
+
+/* Clicked Overlay */
+#css-peeper-clicked-overlay {
+  position: absolute;
+  pointer-events: none;
+  background-color: rgba(236, 72, 153, 0.15);
+  border: 2px solid #ec4899;
+  z-index: calc(var(--css-peeper-z) - 2);
+  transition: all 0.2s ease-out;
+  border-radius: 2px;
+  display: none;
+  box-sizing: border-box;
+}
+
+#css-peeper-clicked-overlay.active {
+  display: block;
+}
+
+/* Active State Cursor */
+body.css-peeper-mode-active * {
+  cursor: crosshair !important;
+}
+
+/* Toast Notification */
+#css-peeper-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--css-peeper-bg);
+  color: var(--css-peeper-text);
+  padding: 10px 24px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--css-peeper-border);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  z-index: var(--css-peeper-z);
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+#css-peeper-toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+/* Panel Container Reset */
+#css-peeper-panel {
+  all: initial;
+  position: fixed;
+  width: 300px;
+  max-height: calc(100vh - 40px);
+  background: var(--css-peeper-bg);
+  border: 1px solid var(--css-peeper-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.05) inset;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: var(--css-peeper-z);
+  overflow-y: auto;
+  display: none;
+  flex-direction: column;
+}
+
+#css-peeper-panel.active {
+  display: flex;
+}
+
+/* Universal Reset inside Panel to stop Host CSS bleeding */
+#css-peeper-panel, #css-peeper-panel * {
+  box-sizing: border-box !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  line-height: 1.5 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  text-align: left;
+  color: var(--css-peeper-text);
+  cursor: default !important;
+}
+
+#css-peeper-panel::-webkit-scrollbar {
+  width: 4px;
+}
+#css-peeper-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+#css-peeper-panel::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 2px;
+}
+
+/* Panel Header */
+.css-peeper-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 56px !important;
+  padding: 0 20px !important;
+  border-bottom: 1px solid var(--css-peeper-border);
+  position: sticky;
+  top: 0;
+  background: rgba(249, 250, 251, 0.85); /* Light transparent header */
+  backdrop-filter: blur(8px);
+  z-index: 10;
+  margin: 0 !important;
+  cursor: grab !important;
+}
+
+.css-peeper-header:active {
+  cursor: grabbing !important;
+}
+
+.css-peeper-header h3 {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+}
+
+#css-peeper-panel .css-peeper-close {
+  background: transparent !important;
+  border: none !important;
+  color: var(--css-peeper-text-muted) !important;
+  cursor: pointer !important;
+  padding: 6px !important;
+  border-radius: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.2s !important;
+  margin: 0 -8px 0 0 !important;
+}
+
+#css-peeper-panel .css-peeper-close * {
+  cursor: pointer !important;
+}
+
+#css-peeper-panel .css-peeper-close:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: var(--css-peeper-text) !important;
+}
+
+/* Sections */
+.css-peeper-section {
+  padding: 16px 20px !important;
+  margin: 0 !important;
+  border-bottom: 1px solid var(--css-peeper-border) !important;
+}
+.css-peeper-section:last-child {
+  border-bottom: none !important;
+}
+
+/* Interactive Selects */
+#css-peeper-panel .css-peeper-select {
+  background: #ffffff !important;
+  border: 1px solid var(--css-peeper-border) !important;
+  border-radius: 6px !important;
+  color: var(--css-peeper-text) !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  padding: 4px 8px !important;
+  outline: none !important;
+  cursor: pointer !important;
+  max-width: 120px;
+  text-overflow: ellipsis;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 6px center !important;
+  background-size: 12px !important;
+  padding-right: 24px !important;
+  transition: all 0.2s !important;
+}
+
+#css-peeper-panel .css-peeper-select:hover {
+  border-color: #d1d5db !important;
+}
+
+#css-peeper-panel .css-peeper-select:focus {
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+}
+
+.css-peeper-section-title {
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.8px !important;
+  color: var(--css-peeper-text-muted) !important;
+  margin: 0 0 12px 0 !important;
+  font-weight: 600 !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+.css-peeper-section.collapsed .css-peeper-section-title {
+  margin-bottom: 0 !important;
+}
+
+.css-peeper-section-title::after {
+  content: "" !important;
+  display: block !important;
+  width: 6px !important;
+  height: 6px !important;
+  border-right: 2px solid var(--css-peeper-text-muted) !important;
+  border-bottom: 2px solid var(--css-peeper-text-muted) !important;
+  transform: rotate(45deg) translateY(-2px) !important;
+  transition: transform 0.2s !important;
+}
+
+.css-peeper-section.collapsed .css-peeper-section-title::after {
+  transform: rotate(-45deg) !important;
+}
+
+.css-peeper-section.collapsed > *:not(.css-peeper-section-title) {
+  display: none !important;
+}
+
+/* Rows */
+.css-peeper-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  margin: 0 0 10px 0 !important;
+  align-items: center !important;
+  padding: 0 !important;
+}
+.css-peeper-row:last-child {
+  margin-bottom: 0 !important;
+}
+
+.css-peeper-label {
+  color: var(--css-peeper-text-muted) !important;
+  font-size: 13px !important;
+  flex: 0 0 45% !important;
+  margin: 0 !important;
+}
+
+.css-peeper-value {
+  color: var(--css-peeper-text) !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  text-align: right !important;
+  word-break: break-all !important;
+  flex: 1 !important;
+  margin: 0 !important;
+}
+
+/* Color block */
+.css-peeper-color-wrap {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  justify-content: flex-end !important;
+  margin: 0 !important;
+}
+
+#css-peeper-panel .css-peeper-copyable,
+#css-peeper-panel .css-peeper-copyable * {
+  cursor: pointer !important;
+  transition: opacity 0.2s !important;
+}
+
+#css-peeper-panel .css-peeper-copyable:hover {
+  opacity: 0.7 !important;
+}
+
+.css-peeper-color-box {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 4px !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  margin: 0 !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05) inset !important;
+}
+
+/* Box Model Visualization */
+.css-peeper-box-model {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  font-size: 11px !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  margin: 10px 0 0 0 !important;
+  width: 100% !important;
+}
+
+.css-peeper-box {
+  border: 1px dashed rgba(0, 0, 0, 0.15) !important;
+  padding: 22px !important; /* Huge fix for overlap */
+  text-align: center !important;
+  position: relative !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.css-peeper-box-margin {
+  background: rgba(249, 204, 157, 0.15) !important;
+  border-color: rgba(249, 204, 157, 0.4) !important;
+  margin: 0 !important;
+}
+
+.css-peeper-box-padding {
+  background: rgba(195, 218, 175, 0.2) !important;
+  border-color: rgba(195, 218, 175, 0.4) !important;
+  margin: 0 !important;
+}
+
+.css-peeper-box-content {
+  background: rgba(140, 182, 192, 0.2) !important;
+  border: 1px solid rgba(140, 182, 192, 0.5) !important;
+  padding: 14px !important;
+  margin: 0 !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.css-peeper-box-label {
+  position: absolute !important;
+  top: 4px !important;
+  left: 6px !important;
+  color: rgba(0, 0, 0, 0.4) !important;
+  font-size: 9px !important;
+  text-transform: uppercase !important;
+}
+
+.css-peeper-box-top { position: absolute !important; top: 4px !important; left: 50% !important; transform: translateX(-50%) !important; color: var(--css-peeper-text-muted) !important;}
+.css-peeper-box-bottom { position: absolute !important; bottom: 4px !important; left: 50% !important; transform: translateX(-50%) !important; color: var(--css-peeper-text-muted) !important;}
+.css-peeper-box-left { position: absolute !important; top: 50% !important; left: 4px !important; transform: translateY(-50%) !important; color: var(--css-peeper-text-muted) !important;}
+.css-peeper-box-right { position: absolute !important; top: 50% !important; right: 4px !important; transform: translateY(-50%) !important; color: var(--css-peeper-text-muted) !important;}

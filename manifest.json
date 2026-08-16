@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "CSS Inspector",
+  "version": "1.0",
+  "description": "Inspect web page elements and extract CSS properties.",
+  "permissions": ["activeTab", "scripting", "contextMenus", "storage"],
+  "action": {
+    "default_title": "Toggle CSS Inspector"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

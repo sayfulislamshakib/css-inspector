@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CSS Inspector Settings</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 30px;
+      margin: 0;
+      background-color: #f9fafb;
+      color: #111827;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 24px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 24px;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 16px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .setting-label {
+      margin-left: 12px;
+      flex: 1;
+    }
+    .setting-title {
+      font-weight: 500;
+      font-size: 16px;
+      margin-bottom: 4px;
+      display: block;
+    }
+    .setting-description {
+      font-size: 14px;
+      color: #6b7280;
+      line-height: 1.5;
+    }
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      cursor: pointer;
+    }
+    .status {
+      margin-top: 16px;
+      font-size: 14px;
+      color: #10b981;
+      min-height: 20px;
+      transition: opacity 0.3s;
+      opacity: 0;
+    }
+    .status.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>CSS Inspector Settings</h1>
+    
+    <div class="setting-row">
+      <input type="checkbox" id="blockInteractions">
+      <div class="setting-label">
+        <label for="blockInteractions" class="setting-title">Block Website Interactions</label>
+        <div class="setting-description">
+          When the inspector is active, disable regular clicks and actions on the website so you can safely inspect elements without triggering links or forms.
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <input type="checkbox" id="pauseOnPopup">
+      <div class="setting-label">
+        <label for="pauseOnPopup" class="setting-title">Pause Inspector When Popup is Open</label>
+        <div class="setting-description">
+          When you click an element and the info popup appears, temporarily disable hovering and selecting new elements until the popup is closed.
+        </div>
+      </div>
+    </div>
+    
+    <div id="status" class="status">Settings saved!</div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
