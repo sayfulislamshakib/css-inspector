@@ -27,6 +27,13 @@
         "mac": "Command+Shift+E"
       },
       "description": "Toggle CSS Inspector"
+    },
+    "toggle_pause_on_popup": {
+      "suggested_key": {
+        "default": "Alt+P",
+        "mac": "Alt+P"
+      },
+      "description": "Toggle Pause Inspector When Popup is Open"
     }
   }
 }

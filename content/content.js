@@ -33,6 +33,20 @@ function init() {
       blockInteractions = result.blockInteractions;
       pauseOnPopup = result.pauseOnPopup;
     });
+
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'local') {
+        if (changes.blockInteractions !== undefined) {
+          blockInteractions = changes.blockInteractions.newValue;
+        }
+        if (changes.pauseOnPopup !== undefined) {
+          pauseOnPopup = changes.pauseOnPopup.newValue;
+          if (isActive) {
+            showToast(`Pause on Popup: ${pauseOnPopup ? "ON" : "OFF"}`);
+          }
+        }
+      }
+    });
   } catch (e) { }
 
   // Create overlay container

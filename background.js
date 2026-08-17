@@ -27,6 +27,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
+chrome.commands.onCommand.addListener((command) => {
+  if (command === "toggle_pause_on_popup") {
+    chrome.storage.local.get({ pauseOnPopup: true }, (result) => {
+      const newValue = !result.pauseOnPopup;
+      chrome.storage.local.set({ pauseOnPopup: newValue });
+    });
+  }
+});
+
 // Shared toggle logic — used by both icon click and keyboard shortcut
 async function toggleInspectorForTab(tab) {
   if (!tab || !tab.id) return;
