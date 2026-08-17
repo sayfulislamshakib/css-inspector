@@ -2,154 +2,185 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
 :root {
-  --css-peeper-bg: rgba(255, 255, 255, 0.95); /* White glass */
-  --css-peeper-border: rgba(0, 0, 0, 0.08);
-  --css-peeper-text: #111827; /* Dark gray for text */
-  --css-peeper-text-muted: #6b7280; /* Medium gray for labels */
-  --css-peeper-accent: #3b82f6;
-  --css-peeper-z: 2147483647;
+  --css-inspector-bg: rgba(255, 255, 255, 0.95); /* White glass */
+  --css-inspector-border: rgba(0, 0, 0, 0.08);
+  --css-inspector-text: #111827; /* Dark gray for text */
+  --css-inspector-text-muted: #6b7280; /* Medium gray for labels */
+  --css-inspector-accent: #3b82f6;
+  --css-inspector-z: 2147483647;
 }
 
 /* Hover Overlays Container */
-#css-peeper-overlay-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+#css-inspector-overlay-container {
+  position: fixed;
+  inset: 0;
   pointer-events: none;
-  z-index: calc(var(--css-peeper-z) - 1);
+  z-index: calc(var(--css-inspector-z) - 1);
   display: none;
+  overflow: hidden;
 }
 
-#css-peeper-overlay-container.active {
+#css-inspector-overlay-container.active {
   display: block;
 }
 
-#css-peeper-overlay-margin,
-#css-peeper-overlay-padding,
-#css-peeper-overlay-content {
-  position: absolute;
+#css-inspector-overlay-margin,
+#css-inspector-overlay-padding,
+#css-inspector-overlay-content {
+  position: fixed;
   box-sizing: border-box;
   pointer-events: none;
   transition: all 0.05s linear;
 }
 
-#css-peeper-overlay-margin {
+#css-inspector-overlay-margin {
   border-style: solid;
   border-color: rgba(249, 204, 157, 0.6); /* Margin orange */
 }
 
-#css-peeper-overlay-padding {
+#css-inspector-overlay-padding {
   border-style: solid;
   border-color: rgba(195, 218, 175, 0.6); /* Padding green */
 }
 
-#css-peeper-overlay-content {
+#css-inspector-overlay-content {
   background-color: rgba(160, 196, 255, 0.6); /* Content blue */
 }
 
+/* Overlay Value Labels */
+#css-inspector-overlay-labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.css-inspector-olabel {
+  position: fixed !important;
+  transform: translate(-50%, -50%) !important;
+  background: rgba(35, 35, 35, 0.85) !important;
+  color: #fff !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  padding: 2px 5px !important;
+  border-radius: 3px !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  transition: opacity 0.15s ease !important;
+  z-index: 2147483647 !important;
+}
+
+.css-inspector-olabel.visible {
+  opacity: 1 !important;
+}
+
 /* Clicked Overlay */
-#css-peeper-clicked-overlay {
-  position: absolute;
+#css-inspector-clicked-overlay {
+  position: fixed;
   pointer-events: none;
   background-color: rgba(236, 72, 153, 0.15);
   border: 2px solid #ec4899;
-  z-index: calc(var(--css-peeper-z) - 2);
+  z-index: calc(var(--css-inspector-z) - 2);
   transition: all 0.2s ease-out;
   border-radius: 2px;
   display: none;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
-#css-peeper-clicked-overlay.active {
+#css-inspector-clicked-overlay.active {
   display: block;
 }
 
 /* Active State Cursor */
-body.css-peeper-mode-active * {
+body.css-inspector-mode-active * {
   cursor: crosshair !important;
 }
 
 /* Toast Notification */
-#css-peeper-toast {
+#css-inspector-toast {
   position: fixed;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%) translateY(100px);
-  background: var(--css-peeper-bg);
-  color: var(--css-peeper-text);
+  background: var(--css-inspector-bg);
+  color: var(--css-inspector-text);
   padding: 10px 24px;
   border-radius: 30px;
   font-size: 14px;
   font-weight: 500;
-  border: 1px solid var(--css-peeper-border);
+  border: 1px solid var(--css-inspector-border);
   box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-  z-index: var(--css-peeper-z);
+  z-index: var(--css-inspector-z);
   opacity: 0;
   transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
   pointer-events: none;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
 }
 
-#css-peeper-toast.show {
+#css-inspector-toast.show {
   transform: translateX(-50%) translateY(0);
   opacity: 1;
 }
 
 /* Panel Container Reset */
-#css-peeper-panel {
+#css-inspector-panel {
   all: initial;
   position: fixed;
-  width: 300px;
+  width: auto;
+  min-width: 280px;
+  max-width: 420px;
   max-height: calc(100vh - 40px);
-  background: var(--css-peeper-bg);
-  border: 1px solid var(--css-peeper-border);
+  background: var(--css-inspector-bg);
+  border: 1px solid var(--css-inspector-border);
   border-radius: 12px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.05) inset;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  z-index: var(--css-peeper-z);
+  z-index: var(--css-inspector-z);
   overflow-y: auto;
   display: none;
   flex-direction: column;
 }
 
-#css-peeper-panel.active {
+#css-inspector-panel.active {
   display: flex;
 }
 
 /* Universal Reset inside Panel to stop Host CSS bleeding */
-#css-peeper-panel, #css-peeper-panel * {
+#css-inspector-panel, #css-inspector-panel * {
   box-sizing: border-box !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
   line-height: 1.5 !important;
   letter-spacing: normal !important;
   text-transform: none !important;
   text-align: left;
-  color: var(--css-peeper-text);
+  color: var(--css-inspector-text);
   cursor: default !important;
 }
 
-#css-peeper-panel::-webkit-scrollbar {
+#css-inspector-panel::-webkit-scrollbar {
   width: 4px;
 }
-#css-peeper-panel::-webkit-scrollbar-track {
+#css-inspector-panel::-webkit-scrollbar-track {
   background: transparent;
 }
-#css-peeper-panel::-webkit-scrollbar-thumb {
+#css-inspector-panel::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.15);
   border-radius: 2px;
 }
 
 /* Panel Header */
-.css-peeper-header {
+.css-inspector-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   height: 56px !important;
   padding: 0 20px !important;
-  border-bottom: 1px solid var(--css-peeper-border);
+  border-bottom: 1px solid var(--css-inspector-border);
   position: sticky;
   top: 0;
   background: rgba(249, 250, 251, 0.85); /* Light transparent header */
@@ -159,20 +190,20 @@ body.css-peeper-mode-active * {
   cursor: grab !important;
 }
 
-.css-peeper-header:active {
+.css-inspector-header:active {
   cursor: grabbing !important;
 }
 
-.css-peeper-header h3 {
+.css-inspector-header h3 {
   font-size: 15px !important;
   font-weight: 600 !important;
   margin: 0 !important;
 }
 
-#css-peeper-panel .css-peeper-close {
+#css-inspector-panel .css-inspector-close {
   background: transparent !important;
   border: none !important;
-  color: var(--css-peeper-text-muted) !important;
+  color: var(--css-inspector-text-muted) !important;
   cursor: pointer !important;
   padding: 6px !important;
   border-radius: 8px !important;
@@ -183,31 +214,31 @@ body.css-peeper-mode-active * {
   margin: 0 -8px 0 0 !important;
 }
 
-#css-peeper-panel .css-peeper-close * {
+#css-inspector-panel .css-inspector-close * {
   cursor: pointer !important;
 }
 
-#css-peeper-panel .css-peeper-close:hover {
+#css-inspector-panel .css-inspector-close:hover {
   background: rgba(0, 0, 0, 0.05) !important;
-  color: var(--css-peeper-text) !important;
+  color: var(--css-inspector-text) !important;
 }
 
 /* Sections */
-.css-peeper-section {
+.css-inspector-section {
   padding: 16px 20px !important;
   margin: 0 !important;
-  border-bottom: 1px solid var(--css-peeper-border) !important;
+  border-bottom: 1px solid var(--css-inspector-border) !important;
 }
-.css-peeper-section:last-child {
+.css-inspector-section:last-child {
   border-bottom: none !important;
 }
 
 /* Interactive Selects */
-#css-peeper-panel .css-peeper-select {
+#css-inspector-panel .css-inspector-select {
   background: #ffffff !important;
-  border: 1px solid var(--css-peeper-border) !important;
+  border: 1px solid var(--css-inspector-border) !important;
   border-radius: 6px !important;
-  color: var(--css-peeper-text) !important;
+  color: var(--css-inspector-text) !important;
   font-family: inherit !important;
   font-size: 13px !important;
   padding: 4px 8px !important;
@@ -226,22 +257,21 @@ body.css-peeper-mode-active * {
   transition: all 0.2s !important;
 }
 
-#css-peeper-panel .css-peeper-select:hover {
+#css-inspector-panel .css-inspector-select:hover {
   border-color: #d1d5db !important;
 }
 
-#css-peeper-panel .css-peeper-select:focus {
+#css-inspector-panel .css-inspector-select:focus {
   border-color: #6366f1 !important;
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
 }
 
-.css-peeper-section-title {
-  font-size: 11px !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.8px !important;
-  color: var(--css-peeper-text-muted) !important;
-  margin: 0 0 12px 0 !important;
-  font-weight: 600 !important;
+.css-inspector-section-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #111827 !important;
+  margin: 0 0 14px 0 !important;
+  letter-spacing: -0.2px !important;
   display: flex !important;
   justify-content: space-between !important;
   align-items: center !important;
@@ -249,138 +279,240 @@ body.css-peeper-mode-active * {
   user-select: none !important;
 }
 
-.css-peeper-section.collapsed .css-peeper-section-title {
+.css-inspector-section.collapsed .css-inspector-section-title {
   margin-bottom: 0 !important;
 }
 
-.css-peeper-section-title::after {
+.css-inspector-section-title::after {
   content: "" !important;
   display: block !important;
   width: 6px !important;
   height: 6px !important;
-  border-right: 2px solid var(--css-peeper-text-muted) !important;
-  border-bottom: 2px solid var(--css-peeper-text-muted) !important;
+  border-right: 2px solid #6b7280 !important;
+  border-bottom: 2px solid #6b7280 !important;
   transform: rotate(45deg) translateY(-2px) !important;
   transition: transform 0.2s !important;
 }
 
-.css-peeper-section.collapsed .css-peeper-section-title::after {
+.css-inspector-section.collapsed .css-inspector-section-title::after {
   transform: rotate(-45deg) !important;
 }
 
-.css-peeper-section.collapsed > *:not(.css-peeper-section-title) {
+.css-inspector-section.collapsed > *:not(.css-inspector-section-title) {
   display: none !important;
 }
 
 /* Rows */
-.css-peeper-row {
+.css-inspector-row {
   display: flex !important;
-  justify-content: space-between !important;
-  margin: 0 0 10px 0 !important;
-  align-items: center !important;
+  align-items: flex-start !important;
+  margin: 0 0 11px 0 !important;
+  min-height: 22px !important;
   padding: 0 !important;
 }
-.css-peeper-row:last-child {
+.css-inspector-row:last-child {
   margin-bottom: 0 !important;
 }
 
-.css-peeper-label {
-  color: var(--css-peeper-text-muted) !important;
-  font-size: 13px !important;
-  flex: 0 0 45% !important;
+.css-inspector-label {
+  color: #6b7280 !important;
+  font-size: 13.5px !important;
+  font-weight: 400 !important;
+  flex: 0 0 110px !important;
+  width: 110px !important;
   margin: 0 !important;
+  padding-top: 1px !important;
+  white-space: nowrap !important;
 }
 
-.css-peeper-value {
-  color: var(--css-peeper-text) !important;
-  font-weight: 500 !important;
-  font-size: 13px !important;
-  text-align: right !important;
-  word-break: break-all !important;
+.css-inspector-value {
+  color: #111827 !important;
+  font-weight: 400 !important;
+  font-size: 13.5px !important;
+  text-align: left !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  gap: 2px !important;
+  word-break: break-word !important;
   flex: 1 !important;
   margin: 0 !important;
 }
 
+.css-inspector-value-text {
+  color: #111827 !important;
+  font-size: 13.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.3 !important;
+  cursor: pointer !important;
+  transition: opacity 0.15s ease, color 0.15s ease !important;
+}
+
+.css-inspector-value-text:hover {
+  color: #2563eb !important;
+  opacity: 0.8 !important;
+}
+
+.css-inspector-class-text {
+  color: #111827 !important;
+  font-size: 13.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.3 !important;
+  margin: 0 !important;
+  cursor: pointer !important;
+  transition: opacity 0.15s ease, color 0.15s ease !important;
+}
+
+.css-inspector-class-text:hover {
+  color: #2563eb !important;
+  opacity: 0.8 !important;
+}
+
 /* Color block */
-.css-peeper-color-wrap {
+.css-inspector-color-wrap {
   display: flex !important;
   align-items: center !important;
   gap: 8px !important;
-  justify-content: flex-end !important;
+  justify-content: flex-start !important;
   margin: 0 !important;
-}
-
-#css-peeper-panel .css-peeper-copyable,
-#css-peeper-panel .css-peeper-copyable * {
   cursor: pointer !important;
-  transition: opacity 0.2s !important;
 }
 
-#css-peeper-panel .css-peeper-copyable:hover {
-  opacity: 0.7 !important;
+.css-inspector-color-wrap:hover .css-inspector-value-text {
+  color: #2563eb !important;
+  opacity: 0.8 !important;
 }
 
-.css-peeper-color-box {
-  width: 14px !important;
-  height: 14px !important;
+.css-inspector-color-box {
+  width: 16px !important;
+  height: 16px !important;
   border-radius: 4px !important;
-  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid rgba(0, 0, 0, 0.15) !important;
   margin: 0 !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05) inset !important;
+  flex-shrink: 0 !important;
+  cursor: pointer !important;
 }
 
 /* Box Model Visualization */
-.css-peeper-box-model {
+.css-inspector-box-model {
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
-  font-size: 11px !important;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-  margin: 10px 0 0 0 !important;
+  margin: 8px 0 0 0 !important;
   width: 100% !important;
+  user-select: none !important;
 }
 
-.css-peeper-box {
-  border: 1px dashed rgba(0, 0, 0, 0.15) !important;
-  padding: 22px !important; /* Huge fix for overlap */
-  text-align: center !important;
+.css-inspector-box {
   position: relative !important;
   width: 100% !important;
   box-sizing: border-box !important;
+  border-radius: 4px !important;
+  text-align: center !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease !important;
 }
 
-.css-peeper-box-margin {
-  background: rgba(249, 204, 157, 0.15) !important;
-  border-color: rgba(249, 204, 157, 0.4) !important;
+.css-inspector-box-margin {
+  background: rgba(249, 204, 157, 0.25) !important; /* DevTools margin orange */
+  border: 1px dashed rgba(220, 140, 60, 0.45) !important;
+  padding: 19px 24px !important;
   margin: 0 !important;
 }
 
-.css-peeper-box-padding {
-  background: rgba(195, 218, 175, 0.2) !important;
-  border-color: rgba(195, 218, 175, 0.4) !important;
+.css-inspector-box-border {
+  background: rgba(255, 235, 170, 0.3) !important; /* DevTools border yellow */
+  border: 1px solid rgba(220, 190, 70, 0.5) !important;
+  padding: 17px 22px !important;
   margin: 0 !important;
 }
 
-.css-peeper-box-content {
-  background: rgba(140, 182, 192, 0.2) !important;
-  border: 1px solid rgba(140, 182, 192, 0.5) !important;
-  padding: 14px !important;
+.css-inspector-box-padding {
+  background: rgba(195, 225, 180, 0.3) !important; /* DevTools padding green */
+  border: 1px dashed rgba(120, 185, 100, 0.5) !important;
+  padding: 17px 20px !important;
+  margin: 0 !important;
+}
+
+.css-inspector-box-content {
+  background: rgba(160, 200, 255, 0.35) !important; /* DevTools content blue */
+  border: 1px solid rgba(100, 160, 240, 0.6) !important;
+  padding: 7px 6px !important;
   margin: 0 !important;
   display: flex !important;
   justify-content: center !important;
   align-items: center !important;
+  border-radius: 3px !important;
+  min-height: 26px !important;
 }
 
-.css-peeper-box-label {
+.css-inspector-box-label {
+  position: absolute !important;
+  top: 3px !important;
+  left: 5px !important;
+  color: rgba(75, 85, 99, 0.65) !important;
+  font-size: 8.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+  line-height: 1 !important;
+  text-transform: lowercase !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  pointer-events: none !important;
+}
+
+.css-inspector-box-val {
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  color: #1f2937 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  cursor: pointer !important;
+  transition: color 0.15s ease !important;
+}
+
+.css-inspector-box-val:hover {
+  color: #2563eb !important;
+}
+
+.css-inspector-box-top {
   position: absolute !important;
   top: 4px !important;
-  left: 6px !important;
-  color: rgba(0, 0, 0, 0.4) !important;
-  font-size: 9px !important;
-  text-transform: uppercase !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
 }
 
-.css-peeper-box-top { position: absolute !important; top: 4px !important; left: 50% !important; transform: translateX(-50%) !important; color: var(--css-peeper-text-muted) !important;}
-.css-peeper-box-bottom { position: absolute !important; bottom: 4px !important; left: 50% !important; transform: translateX(-50%) !important; color: var(--css-peeper-text-muted) !important;}
-.css-peeper-box-left { position: absolute !important; top: 50% !important; left: 4px !important; transform: translateY(-50%) !important; color: var(--css-peeper-text-muted) !important;}
-.css-peeper-box-right { position: absolute !important; top: 50% !important; right: 4px !important; transform: translateY(-50%) !important; color: var(--css-peeper-text-muted) !important;}
+.css-inspector-box-bottom {
+  position: absolute !important;
+  bottom: 4px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+.css-inspector-box-left {
+  position: absolute !important;
+  top: 50% !important;
+  left: 5px !important;
+  transform: translateY(-50%) !important;
+}
+
+.css-inspector-box-right {
+  position: absolute !important;
+  top: 50% !important;
+  right: 5px !important;
+  transform: translateY(-50%) !important;
+}
+
+.css-inspector-box-dims {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #1e40af !important;
+  letter-spacing: 0.2px !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  transition: color 0.15s ease !important;
+}
+
+.css-inspector-box-dims:hover {
+  color: #2563eb !important;
+}

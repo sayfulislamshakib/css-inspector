@@ -27,14 +27,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) return;
+// Shared toggle logic — used by both icon click and keyboard shortcut
+async function toggleInspectorForTab(tab) {
+  if (!tab || !tab.id) return;
+  if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://'))) return;
 
   try {
     const response = await chrome.tabs.sendMessage(tab.id, { action: "toggleInspector" });
     updateBadge(response, tab.id);
   } catch (e) {
-    console.log("Content script not injected yet. Injecting now...");
     try {
       await chrome.scripting.insertCSS({
         target: { tabId: tab.id, allFrames: true },
@@ -48,10 +49,13 @@ chrome.action.onClicked.addListener(async (tab) => {
       const response = await chrome.tabs.sendMessage(tab.id, { action: "toggleInspector" });
       updateBadge(response, tab.id);
     } catch (injectError) {
-      console.error("Failed to inject script: ", injectError);
+      // Failed to inject script (e.g. on restricted chrome:// pages)
     }
   }
-});
+}
+
+// Toggle via toolbar icon click (also triggered by _execute_action keyboard shortcut)
+chrome.action.onClicked.addListener((tab) => toggleInspectorForTab(tab));
 
 function updateBadge(response, tabId) {
   if (response && response.isActive !== undefined) {
@@ -63,3 +67,26 @@ function updateBadge(response, tabId) {
     }
   }
 }
+
+// Listen for messages from content script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'badgeOff' && sender.tab) {
+    chrome.action.setBadgeText({ text: "", tabId: sender.tab.id });
+  }
+  
+  // When a panel opens in one frame, tell all other frames in the tab to hide theirs
+  if (request.action === 'panelOpened' && sender.tab) {
+    chrome.tabs.sendMessage(sender.tab.id, { 
+      action: 'hideOtherPanels', 
+      instanceId: request.instanceId 
+    }).catch(() => {});
+  }
+
+  // When a frame is hovered, tell all other frames to clear their hover overlays
+  if (request.action === 'frameHovered' && sender.tab) {
+    chrome.tabs.sendMessage(sender.tab.id, { 
+      action: 'hideOtherOverlays', 
+      instanceId: request.instanceId 
+    }).catch(() => {});
+  }
+});

@@ -1,84 +1,161 @@
-if (!window.cssPeeperInjected) {
-  window.cssPeeperInjected = true;
+if (!window.cssInspectorInjected) {
+window.cssInspectorInjected = true;
 
-  // State
-  let isActive = false;
-  let blockInteractions = true;
-  let pauseOnPopup = true;
-  let currentTarget = null;
-  let clickedTarget = null;
-  let overlay = null;
-  let overlayMargin = null;
-  let overlayPadding = null;
-  let overlayContent = null;
-  let clickedOverlay = null;
-  let panel = null;
-  const collapsedSections = new Set();
-  
-  let isDraggingPanel = false;
-  let dragStartX = 0;
-  let dragStartY = 0;
-  let initialPanelX = 0;
-  let initialPanelY = 0;
+const myInstanceId = Math.random().toString(36).substring(2, 15);
+
+// State
+let isActive = false;
+let blockInteractions = true;
+let pauseOnPopup = true;
+let currentTarget = null;
+let clickedTarget = null;
+let overlay = null;
+let overlayMargin = null;
+let overlayPadding = null;
+let overlayContent = null;
+let clickedOverlay = null;
+let panel = null;
+const collapsedSections = new Set();
+let isFrameHovered = false;
+
+let isDraggingPanel = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let initialPanelX = 0;
+let initialPanelY = 0;
 
 // Initialize
 function init() {
-  if (document.getElementById('css-peeper-overlay-container')) return;
+  if (document.getElementById('css-inspector-overlay-container')) return;
 
   try {
     chrome.storage.local.get({ blockInteractions: true, pauseOnPopup: true }, (result) => {
       blockInteractions = result.blockInteractions;
       pauseOnPopup = result.pauseOnPopup;
     });
-  } catch (e) {}
+  } catch (e) { }
 
   // Create overlay container
   overlay = document.createElement('div');
-  overlay.id = 'css-peeper-overlay-container';
+  overlay.id = 'css-inspector-overlay-container';
 
   overlayMargin = document.createElement('div');
-  overlayMargin.id = 'css-peeper-overlay-margin';
+  overlayMargin.id = 'css-inspector-overlay-margin';
   overlay.appendChild(overlayMargin);
 
   overlayPadding = document.createElement('div');
-  overlayPadding.id = 'css-peeper-overlay-padding';
+  overlayPadding.id = 'css-inspector-overlay-padding';
   overlay.appendChild(overlayPadding);
 
   overlayContent = document.createElement('div');
-  overlayContent.id = 'css-peeper-overlay-content';
+  overlayContent.id = 'css-inspector-overlay-content';
   overlay.appendChild(overlayContent);
+
+  // Create overlay value labels container
+  const overlayLabels = document.createElement('div');
+  overlayLabels.id = 'css-inspector-overlay-labels';
+  overlayLabels.innerHTML = `
+    <span class="css-inspector-olabel" data-pos="margin-top"></span>
+    <span class="css-inspector-olabel" data-pos="margin-right"></span>
+    <span class="css-inspector-olabel" data-pos="margin-bottom"></span>
+    <span class="css-inspector-olabel" data-pos="margin-left"></span>
+    <span class="css-inspector-olabel" data-pos="padding-top"></span>
+    <span class="css-inspector-olabel" data-pos="padding-right"></span>
+    <span class="css-inspector-olabel" data-pos="padding-bottom"></span>
+    <span class="css-inspector-olabel" data-pos="padding-left"></span>
+    <span class="css-inspector-olabel" data-pos="content-dims"></span>
+  `;
+  overlay.appendChild(overlayLabels);
 
   document.body.appendChild(overlay);
 
   // Create clicked overlay
   clickedOverlay = document.createElement('div');
-  clickedOverlay.id = 'css-peeper-clicked-overlay';
+  clickedOverlay.id = 'css-inspector-clicked-overlay';
   document.body.appendChild(clickedOverlay);
 
   // Create panel
   panel = document.createElement('div');
-  panel.id = 'css-peeper-panel';
+  panel.id = 'css-inspector-panel';
   panel.innerHTML = `
-    <div class="css-peeper-header" id="css-peeper-header">
+    <div class="css-inspector-header" id="css-inspector-header">
       <h3>Element Info</h3>
-      <button class="css-peeper-close" id="css-peeper-close" title="Close">
+      <button class="css-inspector-close" id="css-inspector-close" title="Close">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
     </div>
-    <div id="css-peeper-content"></div>
+    <div id="css-inspector-content"></div>
   `;
   document.body.appendChild(panel);
 
-  document.getElementById('css-peeper-close').addEventListener('click', () => {
+  document.getElementById('css-inspector-close').addEventListener('click', () => {
     panel.classList.remove('active');
     overlay.classList.remove('active');
     clickedOverlay.classList.remove('active');
     clickedTarget = null;
   });
 
-  const header = panel.querySelector('.css-peeper-header');
+  // Delegated click-to-copy for text values, color codes, and class names
+  const contentEl = document.getElementById('css-inspector-content');
+  contentEl.addEventListener('click', (e) => {
+    if (e.target.closest('select') || e.target.closest('.css-inspector-section-title')) return;
+
+    // 1. If clicked a class text (.css-inspector-class-text)
+    const classEl = e.target.closest('.css-inspector-class-text');
+    if (classEl) {
+      const text = classEl.textContent.trim();
+      if (text) {
+        navigator.clipboard.writeText(text).then(() => showToast(`Copied ${text}`));
+        return;
+      }
+    }
+
+    // 2. If clicked color box or color wrap
+    const colorWrap = e.target.closest('.css-inspector-color-wrap');
+    if (colorWrap) {
+      const hexEl = colorWrap.querySelector('.css-inspector-value-text');
+      const hex = hexEl ? hexEl.textContent.trim() : colorWrap.textContent.trim();
+      if (hex) {
+        navigator.clipboard.writeText(hex).then(() => showToast(`Copied ${hex}`));
+        return;
+      }
+    }
+
+    // 3. If clicked value text (.css-inspector-value-text)
+    const valueTextEl = e.target.closest('.css-inspector-value-text');
+    if (valueTextEl) {
+      const text = valueTextEl.textContent.trim();
+      if (text) {
+        navigator.clipboard.writeText(text).then(() => showToast(`Copied ${text}`));
+        return;
+      }
+    }
+
+    // 4. If clicked box model values (.css-inspector-box-val, .css-inspector-box-dims)
+    const boxVal = e.target.closest('.css-inspector-box-val, .css-inspector-box-dims');
+    if (boxVal) {
+      const text = boxVal.textContent.trim();
+      if (text && text !== '-') {
+        navigator.clipboard.writeText(text).then(() => showToast(`Copied ${text}`));
+        return;
+      }
+    }
+
+    // 5. If clicked any value container (.css-inspector-value)
+    const valueEl = e.target.closest('.css-inspector-value');
+    if (valueEl) {
+      const firstText = valueEl.querySelector('.css-inspector-value-text');
+      const text = firstText ? firstText.textContent.trim() : valueEl.textContent.trim();
+      if (text) {
+        navigator.clipboard.writeText(text).then(() => showToast(`Copied ${text}`));
+        return;
+      }
+    }
+  });
+
+  const header = panel.querySelector('.css-inspector-header');
   header.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.css-peeper-close')) return;
+    if (e.target.closest('.css-inspector-close')) return;
     isDraggingPanel = true;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
@@ -94,13 +171,13 @@ function init() {
       e.stopPropagation();
       const dx = e.clientX - dragStartX;
       const dy = e.clientY - dragStartY;
-      
+
       let newX = initialPanelX + dx;
       let newY = initialPanelY + dy;
-      
+
       newX = Math.max(0, Math.min(newX, window.innerWidth - panel.offsetWidth));
       newY = Math.max(0, Math.min(newY, window.innerHeight - panel.offsetHeight));
-      
+
       panel.style.left = `${newX}px`;
       panel.style.top = `${newY}px`;
     }
@@ -113,21 +190,59 @@ function init() {
   // Listeners
   document.addEventListener('mousemove', handleMouseMove, true);
   document.addEventListener('click', handleClick, true);
-  
+  document.addEventListener('scroll', handleScroll, true);
+
+  // Handle mouse leaving the frame to prevent stuck overlays
+  document.addEventListener('mouseout', (e) => {
+    if (!isActive || isDraggingPanel) return;
+    
+    // If relatedTarget is null, the pointer has left the document viewport
+    if (!e.relatedTarget) {
+      isFrameHovered = false;
+      if (!clickedTarget) {
+        overlay.classList.remove('active');
+      }
+      currentTarget = null;
+    }
+  }, true);
+
   // Intercept other actions
   const intercept = (e) => {
     if (!isActive || !blockInteractions) return;
     const target = (e.composedPath && e.composedPath()[0]) || e.target;
-    if (target.closest && target.closest('#css-peeper-panel')) return;
+    if (target.closest && target.closest('#css-inspector-panel')) return;
     e.preventDefault();
     e.stopPropagation();
   };
-  
+
   document.addEventListener('mousedown', intercept, true);
   document.addEventListener('mouseup', intercept, true);
   document.addEventListener('pointerdown', intercept, true);
   document.addEventListener('pointerup', intercept, true);
   document.addEventListener('submit', intercept, true);
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (!isActive) return;
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (clickedTarget) {
+        // Close popup and deselect element
+        panel.classList.remove('active');
+        clickedOverlay.classList.remove('active');
+        clickedTarget = null;
+      } else {
+        // No popup open — turn off the inspector entirely
+        toggleInspector(false);
+        try {
+          chrome.runtime.sendMessage({ action: 'badgeOff' });
+        } catch (err) { }
+      }
+    }
+  }, true);
 }
 
 // Toggle Inspector
@@ -139,54 +254,77 @@ function toggleInspector(state) {
     panel.classList.remove('active');
     currentTarget = null;
     clickedTarget = null;
-    document.body.classList.remove('css-peeper-mode-active');
+    document.body.classList.remove('css-inspector-mode-active');
     showToast("Inspector: OFF");
   } else {
-    document.body.classList.add('css-peeper-mode-active');
+    document.body.classList.add('css-inspector-mode-active');
     showToast("Inspector: ON");
   }
 }
 
 function showToast(message) {
-  let toast = document.getElementById('css-peeper-toast');
+  let toast = document.getElementById('css-inspector-toast');
   if (!toast) {
     toast = document.createElement('div');
-    toast.id = 'css-peeper-toast';
+    toast.id = 'css-inspector-toast';
     document.body.appendChild(toast);
   }
   toast.textContent = message;
   toast.classList.add('show');
-  
+
   if (toast.timeoutId) clearTimeout(toast.timeoutId);
   toast.timeoutId = setTimeout(() => {
     toast.classList.remove('show');
   }, 2000);
 }
 
+// Scroll logic
+function handleScroll(e) {
+  if (!isActive || isDraggingPanel) return;
+
+  // Update clicked overlay (pink border) position
+  if (clickedTarget) {
+    const rect = clickedTarget.getBoundingClientRect();
+    clickedOverlay.style.top = `${rect.top}px`;
+    clickedOverlay.style.left = `${rect.left}px`;
+    clickedOverlay.style.width = `${rect.width}px`;
+    clickedOverlay.style.height = `${rect.height}px`;
+  }
+
+  // Update box model overlay (margin/padding/content)
+  if (pauseOnPopup && clickedTarget) {
+    // Paused on selection: keep box model overlay on the selected element
+    updateOverlay(clickedTarget);
+  } else if (currentTarget) {
+    // Hovering: follow the hovered element
+    updateOverlay(currentTarget);
+  }
+}
+
 // Hover logic
 function handleMouseMove(e) {
   if (!isActive || isDraggingPanel) return;
-  
-  if (pauseOnPopup && clickedTarget) {
-    if (overlay) overlay.classList.remove('active');
-    return;
-  }
 
   const target = (e.composedPath && e.composedPath()[0]) || e.target;
 
-  // Ignore our own UI
-  if ((target.closest && target.closest('#css-peeper-panel')) || target === overlay || target === clickedOverlay) return;
-
-  // Don't highlight the already clicked element
-  if (target === clickedTarget) {
-    overlay.classList.remove('active');
-    currentTarget = target; // Keep track so click handler knows we are clicking the active target
-    return;
-  }
+  // Ignore our own UI elements
+  if ((target.closest && target.closest('#css-inspector-panel')) || target === overlay || target === clickedOverlay) return;
+  if (target.id && target.id.startsWith('css-inspector-')) return;
 
   if (target === currentTarget) return;
-
   currentTarget = target;
+
+  if (!isFrameHovered) {
+    isFrameHovered = true;
+    try {
+      chrome.runtime.sendMessage({ action: 'frameHovered', instanceId: myInstanceId });
+    } catch (err) {}
+  }
+
+  // If paused on a selected element, don't move the box model overlay
+  if (pauseOnPopup && clickedTarget) {
+    return;
+  }
 
   updateOverlay(target);
 }
@@ -212,8 +350,8 @@ function updateOverlay(target) {
   const bb = parseVal(styles.borderBottomWidth);
   const bl = parseVal(styles.borderLeftWidth);
 
-  const top = rect.top + window.scrollY;
-  const left = rect.left + window.scrollX;
+  const top = rect.top;
+  const left = rect.left;
 
   overlayMargin.style.top = `${top - mt}px`;
   overlayMargin.style.left = `${left - ml}px`;
@@ -231,8 +369,86 @@ function updateOverlay(target) {
   overlayContent.style.left = `${left + bl + pl}px`;
   overlayContent.style.width = `${Math.max(0, rect.width - bl - br - pl - pr)}px`;
   overlayContent.style.height = `${Math.max(0, rect.height - bt - bb - pt - pb)}px`;
-  
+
+  // Update overlay value labels positions and text
+  const labels = overlay.querySelectorAll('.css-inspector-olabel');
+  const contentW = Math.max(0, rect.width - bl - br - pl - pr);
+  const contentH = Math.max(0, rect.height - bt - bb - pt - pb);
+  const contentCenterX = left + bl + pl + contentW / 2;
+  const contentCenterY = top + bt + pt + contentH / 2;
+
+  labels.forEach(lbl => {
+    const pos = lbl.dataset.pos;
+    switch (pos) {
+      // Margin labels
+      case 'margin-top':
+        lbl.textContent = mt > 0 ? `${Math.round(mt)}px` : '';
+        lbl.style.top = `${top - mt / 2}px`;
+        lbl.style.left = `${left + rect.width / 2}px`;
+        break;
+      case 'margin-bottom':
+        lbl.textContent = mb > 0 ? `${Math.round(mb)}px` : '';
+        lbl.style.top = `${top + rect.height + mb / 2}px`;
+        lbl.style.left = `${left + rect.width / 2}px`;
+        break;
+      case 'margin-left':
+        lbl.textContent = ml > 0 ? `${Math.round(ml)}px` : '';
+        lbl.style.top = `${top + rect.height / 2}px`;
+        lbl.style.left = `${left - ml / 2}px`;
+        break;
+      case 'margin-right':
+        lbl.textContent = mr > 0 ? `${Math.round(mr)}px` : '';
+        lbl.style.top = `${top + rect.height / 2}px`;
+        lbl.style.left = `${left + rect.width + mr / 2}px`;
+        break;
+      // Padding labels
+      case 'padding-top':
+        lbl.textContent = pt > 0 ? `${Math.round(pt)}px` : '';
+        lbl.style.top = `${top + bt + pt / 2}px`;
+        lbl.style.left = `${contentCenterX}px`;
+        break;
+      case 'padding-bottom':
+        lbl.textContent = pb > 0 ? `${Math.round(pb)}px` : '';
+        lbl.style.top = `${top + rect.height - bb - pb / 2}px`;
+        lbl.style.left = `${contentCenterX}px`;
+        break;
+      case 'padding-left':
+        lbl.textContent = pl > 0 ? `${Math.round(pl)}px` : '';
+        lbl.style.top = `${contentCenterY}px`;
+        lbl.style.left = `${left + bl + pl / 2}px`;
+        break;
+      case 'padding-right':
+        lbl.textContent = pr > 0 ? `${Math.round(pr)}px` : '';
+        lbl.style.top = `${contentCenterY}px`;
+        lbl.style.left = `${left + rect.width - br - pr / 2}px`;
+        break;
+      // Content dimensions
+      case 'content-dims':
+        lbl.textContent = `${Math.round(contentW)} × ${Math.round(contentH)}`;
+        lbl.style.top = `${contentCenterY}px`;
+        lbl.style.left = `${contentCenterX}px`;
+        break;
+    }
+  });
+
   overlay.classList.add('active');
+}
+
+function showOverlayLabels(type) {
+  const labels = overlay.querySelectorAll('.css-inspector-olabel');
+  labels.forEach(lbl => {
+    const pos = lbl.dataset.pos;
+    if (pos.startsWith(type) || (type === 'content' && pos === 'content-dims')) {
+      lbl.classList.add('visible');
+    } else {
+      lbl.classList.remove('visible');
+    }
+  });
+}
+
+function hideOverlayLabels() {
+  const labels = overlay.querySelectorAll('.css-inspector-olabel');
+  labels.forEach(lbl => lbl.classList.remove('visible'));
 }
 
 // Click logic
@@ -242,7 +458,7 @@ function handleClick(e) {
   const target = (e.composedPath && e.composedPath()[0]) || e.target;
 
   // If clicking inside panel, let it work normally
-  if (target.closest && target.closest('#css-peeper-panel')) {
+  if (target.closest && target.closest('#css-inspector-panel')) {
     return;
   }
 
@@ -256,10 +472,9 @@ function handleClick(e) {
   if (pauseOnPopup && clickedTarget) {
     return;
   }
-  
+
   if (currentTarget) {
     clickedTarget = currentTarget;
-    if (overlay) overlay.classList.remove('active');
     inspectElement(currentTarget, e);
   }
 }
@@ -273,27 +488,159 @@ function rgbToHex(rgbStr) {
 
 function getFontWeightName(weight) {
   const map = {
-    '100': 'Thin',
-    '200': 'Extra Light',
-    '300': 'Light',
-    '400': 'Regular',
-    '500': 'Medium',
-    '600': 'Semi Bold',
-    '700': 'Bold',
-    '800': 'Extra Bold',
-    '900': 'Black'
+    '100': 'Thin (100)',
+    '200': 'Extra Light (200)',
+    '300': 'Light (300)',
+    '400': 'Regular (400)',
+    '500': 'Medium (500)',
+    '600': 'Semi Bold (600)',
+    '700': 'Bold (700)',
+    '800': 'Extra Bold (800)',
+    '900': 'Black (900)'
   };
-  if (weight === 'normal') return '400 (Regular)';
-  if (weight === 'bold') return '700 (Bold)';
-  return map[weight] ? `${weight} (${map[weight]})` : weight;
+  if (weight === 'normal') return 'Regular (400)';
+  if (weight === 'bold') return 'Bold (700)';
+  return map[weight] ? map[weight] : weight;
+}
+
+function findPropertyClass(el, category) {
+  if (!el) return '';
+  const classList = Array.from(el.classList || []);
+
+  const patterns = {
+    display: /^(flex|grid|block|inline-block|inline|hidden|table|contents|inline-flex|inline-grid|d-flex|d-block|d-none|d-inline)$/,
+    width: /^(w-|max-w-|min-w-|width-)/,
+    height: /^(h-|max-h-|min-h-|height-)/,
+    padding: /^(p-|px-|py-|pt-|pb-|pl-|pr-|ps-|pe-|padding-)/,
+    margin: /^(m-|mx-|my-|mt-|mb-|ml-|mr-|ms-|me-|margin-)/,
+    gap: /^(gap-|gap-x-|gap-y-)/,
+    justify: /^justify-(start|end|center|between|around|evenly|normal)/,
+    align: /^items-(start|end|center|baseline|stretch)/,
+    direction: /^flex-(row|col|row-reverse|col-reverse)/,
+    radius: /^(rounded|rounded-)/,
+    shadow: /^(shadow|shadow-)/,
+    position: /^(static|fixed|absolute|relative|sticky)$/,
+    zIndex: /^(z-|z-\[)/,
+    opacity: /^opacity-/,
+    fontFamily: /^font-(sans|serif|mono|roboto|inter|poppins|heading|body)/,
+    fontSize: /^(text-(xs|sm|base|lg|xl|\d+xl)|text-\[\d+)/,
+    lineHeight: /^(leading-|leading-\[)/,
+    fontWeight: /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black|\d{3})/,
+    letterSpacing: /^tracking-(tighter|tight|normal|wide|wider|widest|\[)/,
+    textAlign: /^text-(left|center|right|justify|start|end)/,
+    color: /^text-(?!xs|sm|base|lg|xl|\d+xl|left|right|center|justify|start|end|uppercase|lowercase|capitalize|normal-case|italic|non-italic|wrap|nowrap|balance|pretty|ellipsis|clip|break-)/,
+    backgroundColor: /^bg-(?!auto|cover|contain|bottom|top|center|left|right|repeat|no-repeat|fixed|local|scroll|clip|origin)/
+  };
+
+  const regex = patterns[category];
+  if (!regex) return '';
+
+  // 1. Direct class on el
+  const matching = [];
+  for (const cls of classList) {
+    if (regex.test(cls)) {
+      if (category === 'fontFamily' && patterns.fontWeight.test(cls)) continue;
+      matching.push(`.${cls}`);
+    }
+  }
+  if (matching.length > 0) return matching.join(' ');
+
+  // 2. Check closest ancestor for inherited typography properties
+  const inherited = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign', 'color'];
+  if (inherited.includes(category)) {
+    let curr = el.parentElement;
+    while (curr && curr !== document.body && curr !== document.documentElement) {
+      if (curr.classList && curr.classList.length > 0) {
+        for (const cls of Array.from(curr.classList)) {
+          if (regex.test(cls)) {
+            if (category === 'fontFamily' && patterns.fontWeight.test(cls)) continue;
+            return `.${cls}`;
+          }
+        }
+      }
+      curr = curr.parentElement;
+    }
+  }
+
+  // 3. Scan stylesheets for matched CSS rules
+  const cssPropMap = {
+    display: 'display',
+    width: 'width',
+    height: 'height',
+    padding: 'padding',
+    margin: 'margin',
+    gap: 'gap',
+    justify: 'justifyContent',
+    align: 'alignItems',
+    direction: 'flexDirection',
+    radius: 'borderRadius',
+    shadow: 'boxShadow',
+    position: 'position',
+    zIndex: 'zIndex',
+    opacity: 'opacity',
+    fontFamily: 'fontFamily',
+    fontSize: 'fontSize',
+    lineHeight: 'lineHeight',
+    fontWeight: 'fontWeight',
+    letterSpacing: 'letterSpacing',
+    textAlign: 'textAlign',
+    color: 'color',
+    backgroundColor: 'backgroundColor'
+  };
+
+  const cssProp = cssPropMap[category];
+  if (cssProp) {
+    try {
+      for (let i = document.styleSheets.length - 1; i >= 0; i--) {
+        const sheet = document.styleSheets[i];
+        let rules;
+        try { rules = sheet.cssRules || sheet.rules; } catch (e) { continue; }
+        if (!rules) continue;
+        for (let j = rules.length - 1; j >= 0; j--) {
+          const rule = rules[j];
+          if (rule.selectorText && rule.style && rule.style[cssProp]) {
+            try {
+              if (el.matches(rule.selectorText)) {
+                const classMatch = rule.selectorText.match(/\.[\w-]+/);
+                if (classMatch) return classMatch[0];
+                return rule.selectorText;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  return '';
+}
+
+function renderInspectorRow(label, value, category = null, el = null) {
+  let classHtml = '';
+  if (category && el) {
+    const cls = findPropertyClass(el, category);
+    if (cls) {
+      classHtml = `<span class="css-inspector-class-text">${cls}</span>`;
+    }
+  }
+
+  return `
+    <div class="css-inspector-row">
+      <span class="css-inspector-label">${label}</span>
+      <div class="css-inspector-value">
+        <span class="css-inspector-value-text">${value}</span>
+        ${classHtml}
+      </div>
+    </div>
+  `;
 }
 
 function inspectElement(el, e) {
   const styles = window.getComputedStyle(el);
   const rect = el.getBoundingClientRect();
 
-  const content = document.getElementById('css-peeper-content');
-  
+  const content = document.getElementById('css-inspector-content');
+
   const colorsToShow = [];
   const addColor = (label, colorValue) => {
     if (!colorValue || colorValue === 'rgba(0, 0, 0, 0)' || colorValue === 'transparent' || colorValue === 'none') return;
@@ -314,10 +661,6 @@ function inspectElement(el, e) {
     }
   }
 
-  if (hasText) {
-    addColor('Text', styles.color);
-  }
-  
   addColor('Background', styles.backgroundColor);
 
   const hasBorder = parseFloat(styles.borderTopWidth) > 0 || parseFloat(styles.borderRightWidth) > 0 || parseFloat(styles.borderBottomWidth) > 0 || parseFloat(styles.borderLeftWidth) > 0;
@@ -339,19 +682,27 @@ function inspectElement(el, e) {
 
   let colorsSectionHtml = '';
   if (colorsToShow.length > 0) {
-    let colorsHtml = colorsToShow.map(c => `
-        <div class="css-peeper-row">
-          <span class="css-peeper-label">${c.label}</span>
-          <div class="css-peeper-color-wrap css-peeper-copyable" data-color="${c.hex}" title="Click to copy ${c.hex}">
-            <span class="css-peeper-value">${c.hex}</span>
-            <div class="css-peeper-color-box" style="background-color: ${c.hex}"></div>
+    let colorsHtml = colorsToShow.map(c => {
+      const isBg = c.label.toLowerCase().includes('background');
+      const colorClass = isBg ? findPropertyClass(el, 'backgroundColor') : '';
+
+      return `
+        <div class="css-inspector-row">
+          <span class="css-inspector-label">${c.label}</span>
+          <div class="css-inspector-value">
+            <div class="css-inspector-color-wrap">
+              <div class="css-inspector-color-box" style="background-color: ${c.hex}"></div>
+              <span class="css-inspector-value-text">${c.hex}</span>
+            </div>
+            ${colorClass ? `<span class="css-inspector-class-text">${colorClass}</span>` : ''}
           </div>
         </div>
-    `).join('');
-    
+      `;
+    }).join('');
+
     colorsSectionHtml = `
-      <div class="css-peeper-section">
-        <div class="css-peeper-section-title">Colors</div>
+      <div class="css-inspector-section">
+        <div class="css-inspector-section-title">Colors</div>
         ${colorsHtml}
       </div>
     `;
@@ -359,44 +710,39 @@ function inspectElement(el, e) {
 
   const makeSelect = (prop, options, currentValue) => {
     return `
-      <select class="css-peeper-select" data-prop="${prop}">
+      <select class="css-inspector-select" data-prop="${prop}">
         ${options.map(opt => `<option value="${opt}" ${currentValue === opt ? 'selected' : ''}>${opt}</option>`).join('')}
       </select>
     `;
   };
 
   let extraPropsHtml = '';
-  const extras = [];
-  
-  if (styles.opacity && styles.opacity !== '1') extras.push({ label: 'Opacity', value: styles.opacity });
-  if (styles.boxShadow && styles.boxShadow !== 'none') extras.push({ label: 'Shadow', value: styles.boxShadow });
-  if (styles.borderRadius && styles.borderRadius !== '0px') extras.push({ label: 'Radius', value: styles.borderRadius });
-  
+  let extraRows = '';
+
+  if (styles.opacity && styles.opacity !== '1') extraRows += renderInspectorRow('Opacity', styles.opacity, 'opacity', el);
+  if (styles.boxShadow && styles.boxShadow !== 'none') extraRows += renderInspectorRow('Shadow', styles.boxShadow, 'shadow', el);
+  if (styles.borderRadius && styles.borderRadius !== '0px') extraRows += renderInspectorRow('Radius', styles.borderRadius, 'radius', el);
+
   if (styles.position && styles.position !== 'static') {
-    extras.push({ label: 'Position', value: styles.position });
-    if (styles.zIndex && styles.zIndex !== 'auto') extras.push({ label: 'Z-Index', value: styles.zIndex });
+    extraRows += renderInspectorRow('Position', styles.position, 'position', el);
+    if (styles.zIndex && styles.zIndex !== 'auto') extraRows += renderInspectorRow('Z-Index', styles.zIndex, 'zIndex', el);
   }
-  
+
   if (styles.display === 'flex' || styles.display === 'inline-flex') {
-    if (styles.flexDirection && styles.flexDirection !== 'row') extras.push({ label: 'Direction', value: styles.flexDirection });
-    
+    if (styles.flexDirection && styles.flexDirection !== 'row') extraRows += renderInspectorRow('Direction', styles.flexDirection, 'direction', el);
+
     const justifyOpts = ['flex-start', 'flex-end', 'center', 'space-between', 'space-around', 'space-evenly', 'normal'];
     const alignOpts = ['stretch', 'flex-start', 'flex-end', 'center', 'baseline', 'normal'];
-    
-    extras.push({ label: 'Justify', value: makeSelect('justifyContent', justifyOpts, styles.justifyContent) });
-    extras.push({ label: 'Align', value: makeSelect('alignItems', alignOpts, styles.alignItems) });
+
+    extraRows += renderInspectorRow('Justify', makeSelect('justifyContent', justifyOpts, styles.justifyContent), 'justify', el);
+    extraRows += renderInspectorRow('Align', makeSelect('alignItems', alignOpts, styles.alignItems), 'align', el);
   }
-  
-  if (extras.length > 0) {
+
+  if (extraRows) {
     extraPropsHtml = `
-      <div class="css-peeper-section">
-        <div class="css-peeper-section-title">Properties</div>
-        ${extras.map(e => `
-          <div class="css-peeper-row">
-            <span class="css-peeper-label">${e.label}</span>
-            <span class="css-peeper-value">${e.value}</span>
-          </div>
-        `).join('')}
+      <div class="css-inspector-section">
+        <div class="css-inspector-section-title">Properties</div>
+        ${extraRows}
       </div>
     `;
   }
@@ -406,94 +752,96 @@ function inspectElement(el, e) {
   const rowGap = (rawRowGap === 'normal') ? '0px' : rawRowGap;
   const columnGap = (rawColGap === 'normal') ? '0px' : rawColGap;
   let gapHtml = '';
-  
-  if (rowGap === columnGap) {
-    gapHtml = `
-    <div class="css-peeper-row">
-      <span class="css-peeper-label">Gap</span>
-      <span class="css-peeper-value">${rowGap}</span>
-    </div>`;
-  } else {
-    gapHtml = `
-    <div class="css-peeper-row">
-      <span class="css-peeper-label">Gap (Row/Col)</span>
-      <span class="css-peeper-value">${rowGap} / ${columnGap}</span>
-    </div>`;
+
+  if (rowGap === columnGap && rowGap !== '0px') {
+    gapHtml = renderInspectorRow('Gap', rowGap, 'gap', el);
+  } else if (rowGap !== '0px' || columnGap !== '0px') {
+    gapHtml = renderInspectorRow('Gap (Row/Col)', `${rowGap} / ${columnGap}`, 'gap', el);
   }
 
   let marginHtml = '';
   const mt = styles.marginTop, mr = styles.marginRight, mb = styles.marginBottom, ml = styles.marginLeft;
   if (mt !== '0px' || mr !== '0px' || mb !== '0px' || ml !== '0px') {
     if (mt === mr && mt === mb && mt === ml) {
-      marginHtml = `<div class="css-peeper-row"><span class="css-peeper-label">Margin</span><span class="css-peeper-value">${mt}</span></div>`;
+      marginHtml = renderInspectorRow('Margin', mt, 'margin', el);
     } else {
-      if (mt !== '0px') marginHtml += `<div class="css-peeper-row"><span class="css-peeper-label">Margin Top</span><span class="css-peeper-value">${mt}</span></div>`;
-      if (mr !== '0px') marginHtml += `<div class="css-peeper-row"><span class="css-peeper-label">Margin Right</span><span class="css-peeper-value">${mr}</span></div>`;
-      if (mb !== '0px') marginHtml += `<div class="css-peeper-row"><span class="css-peeper-label">Margin Bottom</span><span class="css-peeper-value">${mb}</span></div>`;
-      if (ml !== '0px') marginHtml += `<div class="css-peeper-row"><span class="css-peeper-label">Margin Left</span><span class="css-peeper-value">${ml}</span></div>`;
+      let marginContent = '';
+      if (mt !== '0px') marginContent += renderInspectorRow('Margin Top', mt);
+      if (mr !== '0px') marginContent += renderInspectorRow('Margin Right', mr);
+      if (mb !== '0px') marginContent += renderInspectorRow('Margin Bottom', mb);
+      if (ml !== '0px') marginContent += renderInspectorRow('Margin Left', ml);
+      const mCls = findPropertyClass(el, 'margin');
+      if (mCls) marginContent += `<div class="css-inspector-row"><span class="css-inspector-label">Margin Class</span><div class="css-inspector-value"><span class="css-inspector-class-text">${mCls}</span></div></div>`;
+      marginHtml = marginContent;
     }
   }
-  
+
   let paddingHtml = '';
   const pt = styles.paddingTop, pr = styles.paddingRight, pb = styles.paddingBottom, pl = styles.paddingLeft;
   if (pt !== '0px' || pr !== '0px' || pb !== '0px' || pl !== '0px') {
     if (pt === pr && pt === pb && pt === pl) {
-      paddingHtml = `<div class="css-peeper-row"><span class="css-peeper-label">Padding</span><span class="css-peeper-value">${pt}</span></div>`;
+      paddingHtml = renderInspectorRow('Padding', pt, 'padding', el);
     } else {
-      if (pt !== '0px') paddingHtml += `<div class="css-peeper-row"><span class="css-peeper-label">Padding Top</span><span class="css-peeper-value">${pt}</span></div>`;
-      if (pr !== '0px') paddingHtml += `<div class="css-peeper-row"><span class="css-peeper-label">Padding Right</span><span class="css-peeper-value">${pr}</span></div>`;
-      if (pb !== '0px') paddingHtml += `<div class="css-peeper-row"><span class="css-peeper-label">Padding Bottom</span><span class="css-peeper-value">${pb}</span></div>`;
-      if (pl !== '0px') paddingHtml += `<div class="css-peeper-row"><span class="css-peeper-label">Padding Left</span><span class="css-peeper-value">${pl}</span></div>`;
+      let paddingContent = '';
+      if (pt !== '0px') paddingContent += renderInspectorRow('Padding Top', pt);
+      if (pr !== '0px') paddingContent += renderInspectorRow('Padding Right', pr);
+      if (pb !== '0px') paddingContent += renderInspectorRow('Padding Bottom', pb);
+      if (pl !== '0px') paddingContent += renderInspectorRow('Padding Left', pl);
+      const pCls = findPropertyClass(el, 'padding');
+      if (pCls) paddingContent += `<div class="css-inspector-row"><span class="css-inspector-label">Padding Class</span><div class="css-inspector-value"><span class="css-inspector-class-text">${pCls}</span></div></div>`;
+      paddingHtml = paddingContent;
     }
   }
 
   let typographyHtml = '';
   if (hasText) {
+    const textColorHex = rgbToHex(styles.color);
+    const textColorClass = findPropertyClass(el, 'color');
+
+    const textColorHtml = (styles.color && styles.color !== 'rgba(0, 0, 0, 0)' && styles.color !== 'transparent') ? `
+      <div class="css-inspector-row">
+        <span class="css-inspector-label">Text color</span>
+        <div class="css-inspector-value">
+          <div class="css-inspector-color-wrap">
+            <div class="css-inspector-color-box" style="background-color: ${textColorHex}"></div>
+            <span class="css-inspector-value-text">${textColorHex}</span>
+          </div>
+          ${textColorClass ? `<span class="css-inspector-class-text">${textColorClass}</span>` : ''}
+        </div>
+      </div>
+    ` : '';
+
     typographyHtml = `
-    <div class="css-peeper-section">
-      <div class="css-peeper-section-title">Typography</div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Font</span>
-        <span class="css-peeper-value">${styles.fontFamily.split(',')[0].replace(/['"]/g, '')}</span>
-      </div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Size</span>
-        <span class="css-peeper-value">${styles.fontSize}</span>
-      </div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Weight</span>
-        <span class="css-peeper-value">${getFontWeightName(styles.fontWeight)}</span>
-      </div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Line Height</span>
-        <span class="css-peeper-value">${styles.lineHeight}</span>
-      </div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Align</span>
-        <span class="css-peeper-value">${makeSelect('textAlign', ['start', 'end', 'left', 'right', 'center', 'justify'], styles.textAlign)}</span>
-      </div>
+    <div class="css-inspector-section">
+      <div class="css-inspector-section-title">Text properties</div>
+      ${renderInspectorRow('Font Family', styles.fontFamily.replace(/['"]/g, ''), 'fontFamily', el)}
+      ${renderInspectorRow('Font Size', styles.fontSize, 'fontSize', el)}
+      ${renderInspectorRow('Line Height', styles.lineHeight, 'lineHeight', el)}
+      ${renderInspectorRow('Font Weight', getFontWeightName(styles.fontWeight), 'fontWeight', el)}
+      ${renderInspectorRow('Letter Spacing', styles.letterSpacing === 'normal' ? 'normal' : styles.letterSpacing, 'letterSpacing', el)}
+      ${textColorHtml}
+      ${renderInspectorRow('Align', makeSelect('textAlign', ['start', 'end', 'left', 'right', 'center', 'justify'], styles.textAlign), 'textAlign', el)}
     </div>`;
   }
 
+  const formatBoxVal = (val) => {
+    if (!val || val === '0px' || val === 'none') return '-';
+    if (val === 'auto') return 'auto';
+    const num = parseFloat(val);
+    if (!isNaN(num)) {
+      if (num === 0) return '-';
+      return Number.isInteger(num) ? num.toString() : num.toFixed(1).replace(/\.0$/, '');
+    }
+    return val;
+  };
+
   content.innerHTML = `
-    <div class="css-peeper-section">
-      <div class="css-peeper-section-title">Layout & Dimensions</div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Tag</span>
-        <span class="css-peeper-value">${tag}</span>
-      </div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Display</span>
-        <span class="css-peeper-value">${styles.display}</span>
-      </div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Width</span>
-        <span class="css-peeper-value">${Math.round(rect.width)}px</span>
-      </div>
-      <div class="css-peeper-row">
-        <span class="css-peeper-label">Height</span>
-        <span class="css-peeper-value">${Math.round(rect.height)}px</span>
-      </div>
+    <div class="css-inspector-section">
+      <div class="css-inspector-section-title">Layout & Dimensions</div>
+      ${renderInspectorRow('Tag', tag)}
+      ${renderInspectorRow('Display', styles.display, 'display', el)}
+      ${renderInspectorRow('Width', `${Math.round(rect.width)}px`, 'width', el)}
+      ${renderInspectorRow('Height', `${Math.round(rect.height)}px`, 'height', el)}
       ${paddingHtml}
       ${marginHtml}
       ${gapHtml}
@@ -503,25 +851,33 @@ function inspectElement(el, e) {
     ${extraPropsHtml}
     ${colorsSectionHtml}
 
-    <div class="css-peeper-section">
-      <div class="css-peeper-section-title">Box Model</div>
-      <div class="css-peeper-box-model">
-        <div class="css-peeper-box css-peeper-box-margin">
-          <span class="css-peeper-box-label">margin</span>
-          <span class="css-peeper-box-top">${styles.marginTop}</span>
-          <span class="css-peeper-box-bottom">${styles.marginBottom}</span>
-          <span class="css-peeper-box-left">${styles.marginLeft}</span>
-          <span class="css-peeper-box-right">${styles.marginRight}</span>
+    <div class="css-inspector-section">
+      <div class="css-inspector-section-title">Box Model</div>
+      <div class="css-inspector-box-model">
+        <div class="css-inspector-box css-inspector-box-margin">
+          <span class="css-inspector-box-label">margin</span>
+          <span class="css-inspector-box-val css-inspector-box-top">${formatBoxVal(styles.marginTop)}</span>
+          <span class="css-inspector-box-val css-inspector-box-bottom">${formatBoxVal(styles.marginBottom)}</span>
+          <span class="css-inspector-box-val css-inspector-box-left">${formatBoxVal(styles.marginLeft)}</span>
+          <span class="css-inspector-box-val css-inspector-box-right">${formatBoxVal(styles.marginRight)}</span>
 
-          <div class="css-peeper-box css-peeper-box-padding">
-            <span class="css-peeper-box-label">padding</span>
-            <span class="css-peeper-box-top">${styles.paddingTop}</span>
-            <span class="css-peeper-box-bottom">${styles.paddingBottom}</span>
-            <span class="css-peeper-box-left">${styles.paddingLeft}</span>
-            <span class="css-peeper-box-right">${styles.paddingRight}</span>
+          <div class="css-inspector-box css-inspector-box-border">
+            <span class="css-inspector-box-label">border</span>
+            <span class="css-inspector-box-val css-inspector-box-top">${formatBoxVal(styles.borderTopWidth)}</span>
+            <span class="css-inspector-box-val css-inspector-box-bottom">${formatBoxVal(styles.borderBottomWidth)}</span>
+            <span class="css-inspector-box-val css-inspector-box-left">${formatBoxVal(styles.borderLeftWidth)}</span>
+            <span class="css-inspector-box-val css-inspector-box-right">${formatBoxVal(styles.borderRightWidth)}</span>
 
-            <div class="css-peeper-box-content">
-              ${Math.round(rect.width)} × ${Math.round(rect.height)}
+            <div class="css-inspector-box css-inspector-box-padding">
+              <span class="css-inspector-box-label">padding</span>
+              <span class="css-inspector-box-val css-inspector-box-top">${formatBoxVal(styles.paddingTop)}</span>
+              <span class="css-inspector-box-val css-inspector-box-bottom">${formatBoxVal(styles.paddingBottom)}</span>
+              <span class="css-inspector-box-val css-inspector-box-left">${formatBoxVal(styles.paddingLeft)}</span>
+              <span class="css-inspector-box-val css-inspector-box-right">${formatBoxVal(styles.paddingRight)}</span>
+
+              <div class="css-inspector-box css-inspector-box-content">
+                <span class="css-inspector-box-dims">${Math.round(rect.width)} × ${Math.round(rect.height)}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -530,11 +886,11 @@ function inspectElement(el, e) {
   `;
 
   // Attach collapsible section listeners
-  const sectionTitles = content.querySelectorAll('.css-peeper-section-title');
+  const sectionTitles = content.querySelectorAll('.css-inspector-section-title');
   sectionTitles.forEach(title => {
     const titleText = title.textContent.trim();
-    const section = title.closest('.css-peeper-section');
-    
+    const section = title.closest('.css-inspector-section');
+
     // Restore collapsed state
     if (collapsedSections.has(titleText) && section) {
       section.classList.add('collapsed');
@@ -553,66 +909,93 @@ function inspectElement(el, e) {
   });
 
   // Attach change listeners for selects
-  const selects = content.querySelectorAll('.css-peeper-select');
+  const selects = content.querySelectorAll('.css-inspector-select');
   selects.forEach(select => {
     select.addEventListener('change', (e) => {
       const prop = e.target.getAttribute('data-prop');
       const val = e.target.value;
       if (clickedTarget) {
         clickedTarget.style[prop] = val;
-        
+
         // Update overlay immediately
         setTimeout(() => {
           const newRect = clickedTarget.getBoundingClientRect();
           clickedOverlay.style.width = newRect.width + 'px';
           clickedOverlay.style.height = newRect.height + 'px';
-          clickedOverlay.style.top = (newRect.top + window.scrollY) + 'px';
-          clickedOverlay.style.left = (newRect.left + window.scrollX) + 'px';
+          clickedOverlay.style.top = newRect.top + 'px';
+          clickedOverlay.style.left = newRect.left + 'px';
+          
+          if (pauseOnPopup && clickedTarget) {
+            updateOverlay(clickedTarget);
+          } else if (currentTarget) {
+            updateOverlay(currentTarget);
+          }
         }, 10);
       }
     });
   });
 
-  // Attach copy listeners
-  const copyables = content.querySelectorAll('.css-peeper-copyable');
-  copyables.forEach(el => {
-    el.addEventListener('click', () => {
-      const colorToCopy = el.dataset.color;
-      navigator.clipboard.writeText(colorToCopy).then(() => {
-        showToast(`Copied ${colorToCopy}`);
-      }).catch(err => {
-        console.error('Failed to copy: ', err);
-      });
+  // Attach box model hover listeners for overlay labels
+  const boxModelContainer = content.querySelector('.css-inspector-box-model');
+  if (boxModelContainer) {
+    boxModelContainer.addEventListener('mouseover', (e) => {
+      const box = e.target.closest('.css-inspector-box');
+      if (!box) {
+        hideOverlayLabels();
+        return;
+      }
+      
+      if (box.classList.contains('css-inspector-box-content')) {
+        showOverlayLabels('content');
+      } else if (box.classList.contains('css-inspector-box-padding')) {
+        showOverlayLabels('padding');
+      } else if (box.classList.contains('css-inspector-box-border')) {
+        hideOverlayLabels();
+      } else if (box.classList.contains('css-inspector-box-margin')) {
+        showOverlayLabels('margin');
+      }
     });
-  });
 
-  // Update clicked overlay position
-  clickedOverlay.style.top = `${rect.top + window.scrollY}px`;
-  clickedOverlay.style.left = `${rect.left + window.scrollX}px`;
+    boxModelContainer.addEventListener('mouseout', (e) => {
+      if (!boxModelContainer.contains(e.relatedTarget)) {
+        hideOverlayLabels();
+      }
+    });
+  }
+
+  // Update clicked overlay (pink border) position
+  clickedOverlay.style.top = `${rect.top}px`;
+  clickedOverlay.style.left = `${rect.left}px`;
   clickedOverlay.style.width = `${rect.width}px`;
   clickedOverlay.style.height = `${rect.height}px`;
   clickedOverlay.classList.add('active');
 
+  // Show box model overlay (margin/padding/content) on the selected element
+  updateOverlay(el);
+
   panel.classList.add('active');
+  try {
+    chrome.runtime.sendMessage({ action: 'panelOpened', instanceId: myInstanceId });
+  } catch (err) {}
 
   // Position panel based on click
   if (e) {
     const panelWidth = panel.offsetWidth;
     const panelHeight = panel.offsetHeight;
-    
+
     let top = e.clientY + 15;
     let left = e.clientX + 15;
-    
+
     // Check if it goes off bottom
     if (top + panelHeight > window.innerHeight) {
       top = e.clientY - panelHeight - 15;
     }
-    
+
     // Check if it goes off right
     if (left + panelWidth > window.innerWidth) {
       left = e.clientX - panelWidth - 15;
     }
-    
+
     // Final boundary checks just in case
     top = Math.max(10, top);
     left = Math.max(10, left);
@@ -626,6 +1009,22 @@ function inspectElement(el, e) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "getState") {
     sendResponse({ isActive });
+  } else if (request.action === 'hideOtherPanels') {
+    if (request.instanceId !== myInstanceId) {
+      if (panel) panel.classList.remove('active');
+      if (overlay) overlay.classList.remove('active');
+      if (clickedOverlay) clickedOverlay.classList.remove('active');
+      clickedTarget = null;
+      isFrameHovered = false;
+    }
+  } else if (request.action === 'hideOtherOverlays') {
+    if (request.instanceId !== myInstanceId) {
+      isFrameHovered = false;
+      if (!clickedTarget && overlay) {
+        overlay.classList.remove('active');
+        currentTarget = null;
+      }
+    }
   } else if (request.action === "toggleInspector") {
     init(); // Ensure injected
     const newState = request.isActive !== undefined ? request.isActive : !isActive;
@@ -639,7 +1038,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     blockInteractions = request.value;
     sendResponse({ success: true });
   }
-  return true;
 });
 
 // Listen for storage changes to update settings in real-time across all tabs
@@ -655,5 +1053,5 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 });
 
 // Auto-init for message listener availability
-  init();
+init();
 }
