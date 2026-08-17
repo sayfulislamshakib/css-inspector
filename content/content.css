@@ -86,22 +86,9 @@
   opacity: 1 !important;
 }
 
-/* Clicked Overlay */
+/* Clicked/Selected Overlay — hidden, using box model overlay instead */
 #css-inspector-clicked-overlay {
-  position: fixed;
-  pointer-events: none;
-  background-color: rgba(236, 72, 153, 0.15);
-  border: 2px solid #ec4899;
-  z-index: calc(var(--css-inspector-z) - 2);
-  transition: all 0.2s ease-out;
-  border-radius: 2px;
-  display: none;
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
-#css-inspector-clicked-overlay.active {
-  display: block;
+  display: none !important;
 }
 
 /* Active State Cursor */

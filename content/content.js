@@ -131,6 +131,8 @@ function init() {
   document.getElementById('css-inspector-close').addEventListener('click', () => {
     panel.classList.remove('active');
     overlay.classList.remove('active');
+    overlayGaps.classList.remove('active');
+    hideOverlayLabels();
     clickedOverlay.classList.remove('active');
     clickedTarget = null;
   });
@@ -273,6 +275,9 @@ function init() {
         // Close popup and deselect element
         panel.classList.remove('active');
         clickedOverlay.classList.remove('active');
+        overlay.classList.remove('active');
+        overlayGaps.classList.remove('active');
+        hideOverlayLabels();
         clickedTarget = null;
       } else {
         // No popup open — turn off the inspector entirely
@@ -322,7 +327,7 @@ function showToast(message) {
 function handleScroll(e) {
   if (!isActive || isDraggingPanel) return;
 
-  // Update clicked overlay (pink border) position
+  // Update clicked overlay (selection indicator) position
   if (clickedTarget) {
     const rect = clickedTarget.getBoundingClientRect();
     clickedOverlay.style.top = `${rect.top}px`;
@@ -362,8 +367,9 @@ function handleMouseMove(e) {
     } catch (err) {}
   }
 
-  // If paused on a selected element, don't move the box model overlay
+  // If paused on a selected element, keep box model overlay locked on it
   if (pauseOnPopup && clickedTarget) {
+    updateOverlay(clickedTarget);
     return;
   }
 
@@ -371,7 +377,7 @@ function handleMouseMove(e) {
 }
 
 function updateOverlay(target) {
-  if (target === clickedTarget) {
+  if (!target) {
     overlay.classList.remove('active');
     overlayGaps.classList.remove('active');
     hideOverlayLabels();
@@ -560,9 +566,15 @@ function handleClick(e) {
     return;
   }
 
-  if (currentTarget) {
-    clickedTarget = currentTarget;
-    inspectElement(currentTarget, e);
+  const elToInspect = target || currentTarget;
+  if (elToInspect && elToInspect !== overlay && elToInspect !== clickedOverlay && !(elToInspect.id && elToInspect.id.startsWith('css-inspector-'))) {
+    clickedTarget = elToInspect;
+    inspectElement(elToInspect, e);
+    // Ensure box model overlay stays visible on selected element
+    updateOverlay(elToInspect);
+    setTimeout(() => {
+      if (clickedTarget) updateOverlay(clickedTarget);
+    }, 50);
   }
 }
 
@@ -1050,7 +1062,7 @@ function inspectElement(el, e) {
     });
   }
 
-  // Update clicked overlay (pink border) position
+  // Update clicked overlay (selection indicator) position
   clickedOverlay.style.top = `${rect.top}px`;
   clickedOverlay.style.left = `${rect.left}px`;
   clickedOverlay.style.width = `${rect.width}px`;
@@ -1127,7 +1139,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Listen for storage changes to update settings in real-time across all tabs
+// Auto-init for message listener availability
+init();
+
+// Safety-net storage listener (outside init) to ensure settings always update
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
     if (changes.blockInteractions !== undefined) {
@@ -1138,7 +1153,4 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     }
   }
 });
-
-// Auto-init for message listener availability
-init();
 }
