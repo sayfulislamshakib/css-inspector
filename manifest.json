@@ -3,6 +3,12 @@
   "name": "CSS Inspector",
   "version": "1.0",
   "description": "Inspect web page elements and extract CSS properties.",
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  },
   "permissions": ["activeTab", "scripting", "contextMenus", "storage"],
   "action": {
     "default_title": "Toggle CSS Inspector"
