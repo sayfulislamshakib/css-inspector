@@ -13,6 +13,7 @@ let overlay = null;
 let overlayMargin = null;
 let overlayPadding = null;
 let overlayContent = null;
+let overlayGaps = null;
 let clickedOverlay = null;
 let panel = null;
 const collapsedSections = new Set();
@@ -71,6 +72,24 @@ function init() {
   overlayContent = document.createElement('div');
   overlayContent.id = 'css-inspector-overlay-content';
   overlay.appendChild(overlayContent);
+
+  // Create gap overlay SVG
+  overlayGaps = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  overlayGaps.id = 'css-inspector-overlay-gaps';
+  overlayGaps.innerHTML = `
+    <defs>
+      <pattern id="css-inspector-gap-pattern" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)">
+        <rect width="5" height="10" fill="rgba(147, 51, 234, 0.4)" />
+        <rect x="5" width="5" height="10" fill="rgba(147, 51, 234, 0.15)" />
+      </pattern>
+      <mask id="css-inspector-gap-mask">
+        <rect width="100%" height="100%" fill="white" />
+        <g id="css-inspector-gap-mask-children"></g>
+      </mask>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#css-inspector-gap-pattern)" mask="url(#css-inspector-gap-mask)" />
+  `;
+  overlay.appendChild(overlayGaps);
 
   // Create overlay value labels container
   const overlayLabels = document.createElement('div');
@@ -354,6 +373,7 @@ function handleMouseMove(e) {
 function updateOverlay(target) {
   if (target === clickedTarget) {
     overlay.classList.remove('active');
+    overlayGaps.classList.remove('active');
     hideOverlayLabels();
     return;
   }
@@ -397,6 +417,45 @@ function updateOverlay(target) {
   overlayContent.style.left = `${left + bl + pl}px`;
   overlayContent.style.width = `${Math.max(0, rect.width - bl - br - pl - pr)}px`;
   overlayContent.style.height = `${Math.max(0, rect.height - bt - bb - pt - pb)}px`;
+
+  // Gap Highlighting for Flex/Grid
+  const display = styles.display;
+  if (display === 'flex' || display === 'inline-flex' || display === 'grid' || display === 'inline-grid') {
+    overlayGaps.classList.add('active');
+    const contentBoxTop = top + bt + pt;
+    const contentBoxLeft = left + bl + pl;
+    const contentBoxWidth = Math.max(0, rect.width - bl - br - pl - pr);
+    const contentBoxHeight = Math.max(0, rect.height - bt - bb - pt - pb);
+    
+    overlayGaps.style.top = `${contentBoxTop}px`;
+    overlayGaps.style.left = `${contentBoxLeft}px`;
+    overlayGaps.style.width = `${contentBoxWidth}px`;
+    overlayGaps.style.height = `${contentBoxHeight}px`;
+
+    const maskChildrenGroup = overlayGaps.querySelector('#css-inspector-gap-mask-children');
+    maskChildrenGroup.innerHTML = ''; // Clear previous children
+
+    // Iterate over children and punch holes in the mask
+    Array.from(target.children).forEach(child => {
+      const childStyles = window.getComputedStyle(child);
+      if (childStyles.display !== 'none') {
+        const childRect = child.getBoundingClientRect();
+        // Calculate child coordinates relative to the SVG container (the content box)
+        const relX = childRect.left - contentBoxLeft;
+        const relY = childRect.top - contentBoxTop;
+        
+        const rectEl = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rectEl.setAttribute("x", relX);
+        rectEl.setAttribute("y", relY);
+        rectEl.setAttribute("width", childRect.width);
+        rectEl.setAttribute("height", childRect.height);
+        rectEl.setAttribute("fill", "black"); // Black masks out the pattern
+        maskChildrenGroup.appendChild(rectEl);
+      }
+    });
+  } else {
+    overlayGaps.classList.remove('active');
+  }
 
   // Update overlay value labels positions and text
   const labels = overlay.querySelectorAll('.css-inspector-olabel');

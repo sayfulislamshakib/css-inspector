@@ -26,11 +26,20 @@
 
 #css-inspector-overlay-margin,
 #css-inspector-overlay-padding,
-#css-inspector-overlay-content {
+#css-inspector-overlay-content,
+#css-inspector-overlay-gaps {
   position: fixed;
   box-sizing: border-box;
   pointer-events: none;
   transition: all 0.05s linear;
+}
+
+#css-inspector-overlay-gaps {
+  display: none;
+}
+
+#css-inspector-overlay-gaps.active {
+  display: block;
 }
 
 #css-inspector-overlay-margin {
