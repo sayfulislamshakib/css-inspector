@@ -23,6 +23,7 @@ let dragStartX = 0;
 let dragStartY = 0;
 let initialPanelX = 0;
 let initialPanelY = 0;
+let forceUpdateOverlay = false;
 
 // Initialize
 function init() {
@@ -41,8 +42,14 @@ function init() {
         }
         if (changes.pauseOnPopup !== undefined) {
           pauseOnPopup = changes.pauseOnPopup.newValue;
+          forceUpdateOverlay = true;
           if (isActive) {
             showToast(`Pause on Popup: ${pauseOnPopup ? "ON" : "OFF"}`);
+            if (pauseOnPopup && clickedTarget) {
+              updateOverlay(clickedTarget);
+            } else if (!pauseOnPopup && currentTarget) {
+              updateOverlay(currentTarget);
+            }
           }
         }
       }
@@ -325,7 +332,8 @@ function handleMouseMove(e) {
   if ((target.closest && target.closest('#css-inspector-panel')) || target === overlay || target === clickedOverlay) return;
   if (target.id && target.id.startsWith('css-inspector-')) return;
 
-  if (target === currentTarget) return;
+  if (target === currentTarget && !forceUpdateOverlay) return;
+  forceUpdateOverlay = false;
   currentTarget = target;
 
   if (!isFrameHovered) {
@@ -344,6 +352,12 @@ function handleMouseMove(e) {
 }
 
 function updateOverlay(target) {
+  if (target === clickedTarget) {
+    overlay.classList.remove('active');
+    hideOverlayLabels();
+    return;
+  }
+
   const rect = target.getBoundingClientRect();
   const styles = window.getComputedStyle(target);
 
