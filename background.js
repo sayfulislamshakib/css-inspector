@@ -30,6 +30,22 @@ chrome.commands.onCommand.addListener((command) => {
       const newValue = !result.pauseOnPopup;
       chrome.storage.local.set({ pauseOnPopup: newValue });
     });
+  } else if (command === "toggle_block_interactions") {
+    chrome.storage.local.get({ blockInteractions: true }, (result) => {
+      const newValue = !result.blockInteractions;
+      chrome.storage.local.set({ blockInteractions: newValue });
+    });
+  }
+});
+
+// Keep context menu title in sync whenever blockInteractions changes in storage
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.blockInteractions !== undefined) {
+    chrome.contextMenus.update("toggleBlockInteractions", {
+      title: changes.blockInteractions.newValue ? "Disable Click Blocking" : "Enable Click Blocking"
+    }, () => {
+      if (chrome.runtime.lastError) {}
+    });
   }
 });
 

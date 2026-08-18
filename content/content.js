@@ -37,16 +37,29 @@ let forceUpdateOverlay = false;
 function init() {
   if (document.getElementById('css-inspector-overlay-container')) return;
 
+  // Custom keyboard shortcuts
+  let customShortcuts = {
+    toggleInspector: { ctrlKey: true, shiftKey: true, altKey: false, key: 'E' },
+    togglePause: { ctrlKey: false, shiftKey: false, altKey: true, key: 'P' },
+    toggleBlockInteractions: { ctrlKey: false, shiftKey: false, altKey: true, key: 'B' }
+  };
+
   try {
-    chrome.storage.local.get({ blockInteractions: true, pauseOnPopup: true }, (result) => {
+    chrome.storage.local.get({ blockInteractions: true, pauseOnPopup: true, customShortcuts: null }, (result) => {
       blockInteractions = result.blockInteractions;
       pauseOnPopup = result.pauseOnPopup;
+      if (result.customShortcuts) {
+        customShortcuts = Object.assign({}, customShortcuts, result.customShortcuts);
+      }
     });
 
     chrome.storage.onChanged.addListener((changes, namespace) => {
       if (namespace === 'local') {
         if (changes.blockInteractions !== undefined) {
           blockInteractions = changes.blockInteractions.newValue;
+          if (isActive) {
+            showToast(`Click Blocking: ${blockInteractions ? "ON" : "OFF"}`);
+          }
         }
         if (changes.pauseOnPopup !== undefined) {
           pauseOnPopup = changes.pauseOnPopup.newValue;
@@ -59,6 +72,9 @@ function init() {
               updateOverlay(currentTarget);
             }
           }
+        }
+        if (changes.customShortcuts !== undefined) {
+          customShortcuts = changes.customShortcuts.newValue;
         }
       }
     });
@@ -288,6 +304,54 @@ function init() {
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
+    // ── Custom shortcut matching ──
+    const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+    
+    // Helper to check if a keydown event matches a shortcut definition
+    function matchesShortcut(shortcut) {
+      if (!shortcut || !shortcut.key) return false;
+      return e.ctrlKey === !!shortcut.ctrlKey &&
+             e.altKey === !!shortcut.altKey &&
+             e.shiftKey === !!shortcut.shiftKey &&
+             key === shortcut.key;
+    }
+
+    // Toggle Inspector shortcut (works even when inspector is off)
+    if (matchesShortcut(customShortcuts.toggleInspector)) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleInspector(!isActive);
+      try {
+        if (!isActive) {
+          chrome.runtime.sendMessage({ action: 'badgeOff' });
+        }
+      } catch (err) { }
+      return;
+    }
+
+    // Toggle Pause on Popup shortcut
+    if (matchesShortcut(customShortcuts.togglePause)) {
+      e.preventDefault();
+      e.stopPropagation();
+      pauseOnPopup = !pauseOnPopup;
+      try {
+        chrome.storage.local.set({ pauseOnPopup });
+      } catch (err) { }
+      return;
+    }
+
+    // Toggle Block Interactions shortcut
+    if (matchesShortcut(customShortcuts.toggleBlockInteractions)) {
+      e.preventDefault();
+      e.stopPropagation();
+      blockInteractions = !blockInteractions;
+      try {
+        chrome.storage.local.set({ blockInteractions });
+      } catch (err) { }
+      return;
+    }
+
+    // ── Built-in keyboard shortcuts (only when inspector is active) ──
     if (!isActive) return;
 
     if (e.key === 'Escape') {

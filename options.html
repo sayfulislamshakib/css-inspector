@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>CSS Inspector Settings</title>
   <style>
     body {
@@ -64,6 +65,183 @@
     .status.visible {
       opacity: 1;
     }
+
+    /* Keyboard Shortcuts Section */
+    .section-divider {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 28px 0 24px;
+    }
+    .section-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 6px;
+    }
+    .section-subtitle {
+      font-size: 14px;
+      color: #6b7280;
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+    .shortcut-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .shortcut-row:last-of-type {
+      border-bottom: none;
+    }
+    .shortcut-info {
+      flex: 1;
+      margin-right: 16px;
+    }
+    .shortcut-name {
+      font-weight: 500;
+      font-size: 15px;
+      color: #111827;
+      margin-bottom: 2px;
+    }
+    .shortcut-desc {
+      font-size: 13px;
+      color: #9ca3af;
+    }
+    .shortcut-recorder {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .shortcut-input {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 140px;
+      min-height: 36px;
+      padding: 6px 12px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      background: #f9fafb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      color: #374151;
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+      outline: none;
+      justify-content: center;
+    }
+    .shortcut-input:hover {
+      border-color: #6366f1;
+      background: #eef2ff;
+    }
+    .shortcut-input.recording {
+      border-color: #6366f1;
+      background: #eef2ff;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+      animation: pulse-border 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15); }
+      50% { box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.08); }
+    }
+    .shortcut-input .placeholder-text {
+      color: #9ca3af;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-style: italic;
+      font-size: 13px;
+    }
+    .key-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 7px;
+      background: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+      line-height: 1.4;
+      min-width: 22px;
+      text-align: center;
+    }
+    .key-separator {
+      color: #9ca3af;
+      font-size: 11px;
+      font-weight: 400;
+    }
+    .shortcut-clear {
+      background: none;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 6px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .shortcut-clear:hover {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: #ef4444;
+    }
+    .shortcut-clear svg {
+      width: 14px;
+      height: 14px;
+    }
+    .shortcut-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .btn-reset {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: white;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b7280;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-reset:hover {
+      background: #f9fafb;
+      border-color: #d1d5db;
+      color: #374151;
+    }
+    .shortcut-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 16px;
+      padding: 10px 14px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #92400e;
+      line-height: 1.5;
+    }
+    .shortcut-note svg {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .shortcut-error {
+      color: #ef4444;
+      font-size: 12px;
+      margin-top: 4px;
+      min-height: 18px;
+    }
   </style>
 </head>
 <body>
@@ -88,6 +266,70 @@
           When you click an element and the info popup appears, temporarily disable hovering and selecting new elements until the popup is closed.
         </div>
       </div>
+    </div>
+
+    <hr class="section-divider">
+
+    <div class="section-title">Keyboard Shortcuts</div>
+    <div class="section-subtitle">Click on a shortcut field and press your desired key combination to customize it.</div>
+
+    <div class="shortcut-row">
+      <div class="shortcut-info">
+        <div class="shortcut-name">Toggle CSS Inspector</div>
+        <div class="shortcut-desc">Activate or deactivate the inspector on the current page</div>
+      </div>
+      <div class="shortcut-recorder">
+        <div class="shortcut-input" id="shortcutToggleInspector" tabindex="0" data-shortcut-id="toggleInspector">
+          <span class="placeholder-text">Click to record</span>
+        </div>
+        <button class="shortcut-clear" id="clearToggleInspector" title="Clear shortcut">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="shortcut-row">
+      <div class="shortcut-info">
+        <div class="shortcut-name">Toggle Pause on Popup</div>
+        <div class="shortcut-desc">Toggle whether the inspector pauses when a popup is open</div>
+      </div>
+      <div class="shortcut-recorder">
+        <div class="shortcut-input" id="shortcutTogglePause" tabindex="0" data-shortcut-id="togglePause">
+          <span class="placeholder-text">Click to record</span>
+        </div>
+        <button class="shortcut-clear" id="clearTogglePause" title="Clear shortcut">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="shortcut-row">
+      <div class="shortcut-info">
+        <div class="shortcut-name">Toggle Block Website Interactions</div>
+        <div class="shortcut-desc">Toggle blocking of clicks and actions on the website while inspecting</div>
+      </div>
+      <div class="shortcut-recorder">
+        <div class="shortcut-input" id="shortcutToggleBlockInteractions" tabindex="0" data-shortcut-id="toggleBlockInteractions">
+          <span class="placeholder-text">Click to record</span>
+        </div>
+        <button class="shortcut-clear" id="clearToggleBlockInteractions" title="Clear shortcut">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="shortcutError" class="shortcut-error"></div>
+
+    <div class="shortcut-actions">
+      <button class="btn-reset" id="resetShortcuts">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        Reset to Defaults
+      </button>
+    </div>
+
+    <div class="shortcut-note">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+      <span>These custom shortcuts work alongside the browser's built-in extension shortcuts. You can also change the browser-level shortcuts at <strong>chrome://extensions/shortcuts</strong>.</span>
     </div>
     
     <div id="status" class="status">Settings saved!</div>

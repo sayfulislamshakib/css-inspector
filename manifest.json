@@ -34,6 +34,13 @@
         "mac": "Alt+P"
       },
       "description": "Toggle Pause Inspector When Popup is Open"
+    },
+    "toggle_block_interactions": {
+      "suggested_key": {
+        "default": "Alt+B",
+        "mac": "Alt+B"
+      },
+      "description": "Toggle Block Website Interactions"
     }
   }
 }
