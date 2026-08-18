@@ -1030,6 +1030,31 @@ function inspectElement(el, e) {
   if (styles.boxShadow && styles.boxShadow !== 'none') extraRows += renderInspectorRow('Shadow', styles.boxShadow, 'shadow', el);
   if (styles.borderRadius && styles.borderRadius !== '0px') extraRows += renderInspectorRow('Radius', styles.borderRadius, 'radius', el);
 
+  // Border style & width
+  const bsTop = styles.borderTopStyle, bsRight = styles.borderRightStyle, bsBottom = styles.borderBottomStyle, bsLeft = styles.borderLeftStyle;
+  const bwTop = styles.borderTopWidth, bwRight = styles.borderRightWidth, bwBottom = styles.borderBottomWidth, bwLeft = styles.borderLeftWidth;
+  const hasBorderStyle = (bsTop !== 'none' && parseFloat(bwTop) > 0) || (bsRight !== 'none' && parseFloat(bwRight) > 0) || (bsBottom !== 'none' && parseFloat(bwBottom) > 0) || (bsLeft !== 'none' && parseFloat(bwLeft) > 0);
+  if (hasBorderStyle) {
+    // Border style
+    if (bsTop === bsRight && bsTop === bsBottom && bsTop === bsLeft) {
+      extraRows += renderInspectorRow('Border Style', bsTop);
+    } else {
+      if (bsTop !== 'none' && parseFloat(bwTop) > 0) extraRows += renderInspectorRow('Border Top Style', bsTop);
+      if (bsRight !== 'none' && parseFloat(bwRight) > 0) extraRows += renderInspectorRow('Border Right Style', bsRight);
+      if (bsBottom !== 'none' && parseFloat(bwBottom) > 0) extraRows += renderInspectorRow('Border Bottom Style', bsBottom);
+      if (bsLeft !== 'none' && parseFloat(bwLeft) > 0) extraRows += renderInspectorRow('Border Left Style', bsLeft);
+    }
+    // Border width
+    if (bwTop === bwRight && bwTop === bwBottom && bwTop === bwLeft) {
+      extraRows += renderInspectorRow('Border Width', bwTop);
+    } else {
+      if (parseFloat(bwTop) > 0) extraRows += renderInspectorRow('Border Top Width', bwTop);
+      if (parseFloat(bwRight) > 0) extraRows += renderInspectorRow('Border Right Width', bwRight);
+      if (parseFloat(bwBottom) > 0) extraRows += renderInspectorRow('Border Bottom Width', bwBottom);
+      if (parseFloat(bwLeft) > 0) extraRows += renderInspectorRow('Border Left Width', bwLeft);
+    }
+  }
+
   if (styles.position && styles.position !== 'static') {
     extraRows += renderInspectorRow('Position', styles.position, 'position', el);
     if (styles.zIndex && styles.zIndex !== 'auto') extraRows += renderInspectorRow('Z-Index', styles.zIndex, 'zIndex', el);
