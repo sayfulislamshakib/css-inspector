@@ -6,7 +6,6 @@
   --css-inspector-border: rgba(0, 0, 0, 0.08);
   --css-inspector-text: #111827; /* Dark gray for text */
   --css-inspector-text-muted: #6b7280; /* Medium gray for labels */
-  --css-inspector-accent: #3b82f6;
   --css-inspector-z: 2147483647;
 }
 
@@ -516,4 +515,76 @@ body.css-inspector-mode-active * {
 
 .css-inspector-box-dims:hover {
   color: #2563eb !important;
+}
+
+/* ── Gap Measurement Overlays ── */
+
+.css-inspector-measure-overlay {
+  position: fixed !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  z-index: calc(var(--css-inspector-z) - 2) !important;
+  border: 2px solid rgba(239, 68, 68, 0.8) !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+  border-radius: 2px !important;
+  display: none !important;
+  transition: all 0.05s linear !important;
+}
+
+.css-inspector-measure-overlay.active {
+  display: block !important;
+}
+
+/* Measurement SVG Canvas */
+#css-inspector-measure-svg {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  pointer-events: none !important;
+  z-index: calc(var(--css-inspector-z) - 1) !important;
+  display: none !important;
+  overflow: visible !important;
+}
+
+#css-inspector-measure-svg.active {
+  display: block !important;
+}
+
+/* SVG Measurement Lines */
+.css-inspector-measure-line {
+  stroke: #ef4444 !important;
+  stroke-width: 1.5 !important;
+  stroke-dasharray: 6 3 !important;
+  stroke-linecap: round !important;
+}
+
+.css-inspector-measure-cap {
+  stroke: #ef4444 !important;
+  stroke-width: 2 !important;
+  stroke-linecap: round !important;
+}
+
+/* Distance Label */
+.css-inspector-measure-label-bg {
+  fill: #dc2626 !important;
+  opacity: 0.95 !important;
+}
+
+.css-inspector-measure-label {
+  fill: #ffffff !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+}
+
+/* Overlap Text */
+.css-inspector-measure-text-overlap {
+  fill: #ef4444 !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  paint-order: stroke !important;
+  stroke: #ffffff !important;
+  stroke-width: 3px !important;
 }

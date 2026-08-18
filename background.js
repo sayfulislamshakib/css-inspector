@@ -1,7 +1,4 @@
 // background.js
-// Service worker for the CSS Inspector extension
-
-
 
 // Listen for clicks on the extension icon
 chrome.runtime.onInstalled.addListener(() => {
