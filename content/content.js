@@ -22,6 +22,7 @@ if (!window.cssInspectorInjected) {
   let currentHighlightedRegion = null;
   const selectedHighlightRegions = new Set();
   let selectedOverlayContainer = null;
+  let gapHighlightsContainer = null;
 
   // Gap measurement state
   let measureTarget = null;
@@ -117,6 +118,10 @@ if (!window.cssInspectorInjected) {
     selectedOverlayContainer.id = 'css-inspector-overlay-selected-container';
     overlay.appendChild(selectedOverlayContainer);
 
+    gapHighlightsContainer = document.createElement('div');
+    gapHighlightsContainer.id = 'css-inspector-gap-highlights';
+    overlay.appendChild(gapHighlightsContainer);
+
     // Create gap overlay SVG
     overlayGaps = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     overlayGaps.id = 'css-inspector-overlay-gaps';
@@ -198,6 +203,7 @@ if (!window.cssInspectorInjected) {
       overlay.classList.remove('active');
       if (overlayHighlight) overlayHighlight.classList.remove('active');
       if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
+      if (gapHighlightsContainer) gapHighlightsContainer.innerHTML = '';
       overlayGaps.classList.remove('active');
       hideOverlayLabels();
       clickedOverlay.classList.remove('active');
@@ -253,6 +259,11 @@ if (!window.cssInspectorInjected) {
 
       const item = getHighlightableFromEvent(e);
       if (item) {
+        // If this region is already selected/clicked, do not trigger hover highlight
+        if (selectedHighlightRegions.has(item.regionKey)) {
+          highlightRegion(null, null);
+          return;
+        }
         highlightRegion(el, item.regionKey);
       } else {
         highlightRegion(null, null);
@@ -497,6 +508,7 @@ if (!window.cssInspectorInjected) {
           overlay.classList.remove('active');
           if (overlayHighlight) overlayHighlight.classList.remove('active');
           if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
+          if (gapHighlightsContainer) gapHighlightsContainer.innerHTML = '';
           overlayGaps.classList.remove('active');
           hideOverlayLabels();
           clickedTarget = null;
@@ -520,6 +532,7 @@ if (!window.cssInspectorInjected) {
       overlay.classList.remove('active');
       if (overlayHighlight) overlayHighlight.classList.remove('active');
       if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
+      if (gapHighlightsContainer) gapHighlightsContainer.innerHTML = '';
       clickedOverlay.classList.remove('active');
       panel.classList.remove('active');
       currentTarget = null;
@@ -792,6 +805,7 @@ if (!window.cssInspectorInjected) {
     });
 
     overlay.classList.add('active');
+    renderGapHighlights(target);
     if (selectedHighlightRegions.size > 0) {
       showOverlayLabels(Array.from(selectedHighlightRegions));
     }
@@ -828,6 +842,152 @@ if (!window.cssInspectorInjected) {
   function hideOverlayLabels() {
     const labels = overlay.querySelectorAll('.css-inspector-olabel');
     labels.forEach(lbl => lbl.classList.remove('visible'));
+    if (gapHighlightsContainer && !selectedHighlightRegions.has('gap') && currentHighlightedRegion !== 'gap') {
+      gapHighlightsContainer.innerHTML = '';
+    }
+  }
+
+  function computeGaps(target) {
+    if (!target) return [];
+    const styles = window.getComputedStyle(target);
+
+    const rawRG = styles.rowGap || styles.gridRowGap || '0px';
+    const rawCG = styles.columnGap || styles.gridColumnGap || '0px';
+    const rG = (rawRG === 'normal') ? 0 : (parseFloat(rawRG) || 0);
+    const cG = (rawCG === 'normal') ? 0 : (parseFloat(rawCG) || 0);
+
+    const rect = target.getBoundingClientRect();
+    const bt = parseFloat(styles.borderTopWidth) || 0;
+    const bl = parseFloat(styles.borderLeftWidth) || 0;
+    const pt = parseFloat(styles.paddingTop) || 0;
+    const pl = parseFloat(styles.paddingLeft) || 0;
+    const pb = parseFloat(styles.paddingBottom) || 0;
+    const pr = parseFloat(styles.paddingRight) || 0;
+
+    const contentTop = rect.top + bt + pt;
+    const contentLeft = rect.left + bl + pl;
+    const contentWidth = Math.max(0, rect.width - bl - pr - pl - (parseFloat(styles.borderRightWidth) || 0));
+    const contentHeight = Math.max(0, rect.height - bt - pb - pt - (parseFloat(styles.borderBottomWidth) || 0));
+
+    const visibleChildren = Array.from(target.children).filter(child => {
+      const cs = window.getComputedStyle(child);
+      return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.position !== 'absolute' && cs.position !== 'fixed';
+    });
+
+    const gapSlots = [];
+
+    if (visibleChildren.length >= 2) {
+      const childRects = visibleChildren.map(c => c.getBoundingClientRect());
+
+      // Check horizontal (column) gaps between items
+      for (let i = 0; i < childRects.length; i++) {
+        for (let j = 0; j < childRects.length; j++) {
+          if (i === j) continue;
+          const a = childRects[i];
+          const b = childRects[j];
+
+          // Check if b is to the right of a and overlapping vertically
+          const vOverlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          if (vOverlap > 4 && b.left >= a.right - 1) {
+            const gapDist = b.left - a.right;
+            if (gapDist > 1) {
+              const hasBetween = childRects.some((mid, mIdx) => {
+                if (mIdx === i || mIdx === j) return false;
+                return mid.left >= a.right - 2 && mid.right <= b.left + 2 && (Math.min(a.bottom, mid.bottom) - Math.max(a.top, mid.top) > 4);
+              });
+              if (!hasBetween) {
+                const gTop = Math.min(a.top, b.top);
+                const gBottom = Math.max(a.bottom, b.bottom);
+                gapSlots.push({
+                  type: 'column',
+                  left: a.right,
+                  top: gTop,
+                  width: gapDist,
+                  height: Math.max(16, gBottom - gTop),
+                  value: `${Math.round(gapDist)}px`
+                });
+              }
+            }
+          }
+
+          // Check vertical (row) gaps between items
+          const hOverlap = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          if (hOverlap > 4 && b.top >= a.bottom - 1) {
+            const gapDist = b.top - a.bottom;
+            if (gapDist > 1) {
+              const hasBetween = childRects.some((mid, mIdx) => {
+                if (mIdx === i || mIdx === j) return false;
+                return mid.top >= a.bottom - 2 && mid.bottom <= b.top + 2 && (Math.min(a.right, mid.right) - Math.max(a.left, mid.left) > 4);
+              });
+              if (!hasBetween) {
+                const gLeft = Math.min(a.left, b.left);
+                const gRight = Math.max(a.right, b.right);
+                gapSlots.push({
+                  type: 'row',
+                  left: gLeft,
+                  top: a.bottom,
+                  width: Math.max(16, gRight - gLeft),
+                  height: gapDist,
+                  value: `${Math.round(gapDist)}px`
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback if no direct pair-gaps found but gap property is defined
+    if (gapSlots.length === 0 && (rG > 0 || cG > 0)) {
+      const valText = (rG > 0 && cG > 0 && rG !== cG) ? `${rG}px / ${cG}px` : `${rG || cG}px`;
+      gapSlots.push({
+        type: 'generic',
+        left: contentLeft,
+        top: contentTop,
+        width: contentWidth,
+        height: contentHeight,
+        value: valText
+      });
+    }
+
+    // Deduplicate slots that are virtually identical
+    const uniqueSlots = [];
+    gapSlots.forEach(slot => {
+      const isDuplicate = uniqueSlots.some(u =>
+        Math.abs(u.left - slot.left) < 4 && Math.abs(u.top - slot.top) < 4
+      );
+      if (!isDuplicate) {
+        uniqueSlots.push(slot);
+      }
+    });
+
+    return uniqueSlots;
+  }
+
+  function renderGapHighlights(target) {
+    if (!gapHighlightsContainer) return;
+    gapHighlightsContainer.innerHTML = '';
+
+    const isGapActive = currentHighlightedRegion === 'gap' || selectedHighlightRegions.has('gap');
+    if (!isGapActive || !target) return;
+
+    const gaps = computeGaps(target);
+    gaps.forEach(slot => {
+      const strip = document.createElement('div');
+      strip.className = 'css-inspector-gap-strip';
+      strip.style.left = `${slot.left}px`;
+      strip.style.top = `${slot.top}px`;
+      strip.style.width = `${slot.width}px`;
+      strip.style.height = `${slot.height}px`;
+      gapHighlightsContainer.appendChild(strip);
+
+      const badge = document.createElement('span');
+      badge.className = 'css-inspector-gap-badge';
+      badge.textContent = slot.value;
+      badge.style.left = `${slot.left + slot.width / 2}px`;
+      badge.style.top = `${slot.top + slot.height / 2}px`;
+      gapHighlightsContainer.appendChild(badge);
+    });
   }
 
   function getRegionGeometry(target, regionKey) {
@@ -999,6 +1159,7 @@ if (!window.cssInspectorInjected) {
     currentHighlightedRegion = regionKey;
     if (!activeEl || !regionKey || !overlayHighlight) {
       if (overlayHighlight) overlayHighlight.classList.remove('active');
+      renderGapHighlights(activeEl);
       if (selectedHighlightRegions.size > 0) {
         if (activeEl) updateOverlay(activeEl);
         showOverlayLabels(Array.from(selectedHighlightRegions));
@@ -1009,6 +1170,7 @@ if (!window.cssInspectorInjected) {
     }
 
     updateOverlay(activeEl);
+    renderGapHighlights(activeEl);
 
     const geo = getRegionGeometry(activeEl, regionKey);
     if (geo) {
@@ -1036,6 +1198,7 @@ if (!window.cssInspectorInjected) {
     selectedOverlayContainer.innerHTML = '';
 
     const activeEl = target || (pauseOnPopup && clickedTarget) || clickedTarget || currentTarget;
+    renderGapHighlights(activeEl);
 
     if (!activeEl || selectedHighlightRegions.size === 0) {
       if (currentHighlightedRegion) {
@@ -1047,6 +1210,7 @@ if (!window.cssInspectorInjected) {
     }
 
     updateOverlay(activeEl);
+    renderGapHighlights(activeEl);
 
     selectedHighlightRegions.forEach(regionKey => {
       const geo = getRegionGeometry(activeEl, regionKey);
@@ -1434,6 +1598,7 @@ if (!window.cssInspectorInjected) {
     if (l === 'border' || l === 'border width' || l === 'border style') return 'border';
     if (l === 'width') return 'width';
     if (l === 'height') return 'height';
+    if (l === 'gap' || l.startsWith('gap')) return 'gap';
     return null;
   }
 
@@ -1465,6 +1630,7 @@ if (!window.cssInspectorInjected) {
     selectedHighlightRegions.clear();
     if (overlayHighlight) overlayHighlight.classList.remove('active');
     if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
+    if (gapHighlightsContainer) gapHighlightsContainer.innerHTML = '';
     hideOverlayLabels();
     const styles = window.getComputedStyle(el);
     const rect = el.getBoundingClientRect();
