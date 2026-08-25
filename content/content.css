@@ -1,5 +1,5 @@
 /* CSS Inspector - Content Script Styles */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
   --css-inspector-bg: rgba(255, 255, 255, 0.95); /* White glass */
@@ -97,6 +97,56 @@
   background: rgba(250, 204, 21, 0.20) !important;
 }
 
+/* Selected Highlight Overlays (Multi-Select Support) */
+#css-inspector-overlay-selected-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.css-inspector-selected-item {
+  position: fixed !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  transition: all 0.05s linear !important;
+}
+
+.css-inspector-selected-item.type-padding {
+  background: rgba(74, 222, 128, 0.25) !important;
+  outline: 1.5px solid rgba(34, 197, 94, 0.85) !important;
+}
+
+.css-inspector-selected-item.type-margin {
+  background: rgba(251, 146, 60, 0.25) !important;
+  outline: 1.5px solid rgba(234, 88, 12, 0.85) !important;
+}
+
+.css-inspector-selected-item.type-border {
+  background: rgba(250, 204, 21, 0.25) !important;
+  outline: 1.5px solid rgba(202, 138, 4, 0.85) !important;
+}
+
+.css-inspector-selected-item.type-content {
+  background: rgba(96, 165, 250, 0.25) !important;
+  outline: 1.5px solid rgba(37, 99, 235, 0.85) !important;
+}
+
+.css-inspector-selected-item.type-padding-all {
+  background: rgba(74, 222, 128, 0.25) !important;
+  outline: 2px solid rgba(34, 197, 94, 0.95) !important;
+}
+
+.css-inspector-selected-item.type-margin-all {
+  background: rgba(251, 146, 60, 0.25) !important;
+  outline: 2px solid rgba(234, 88, 12, 0.95) !important;
+}
+
+.css-inspector-selected-item.type-border-all {
+  background: rgba(250, 204, 21, 0.25) !important;
+  outline: 2px solid rgba(202, 138, 4, 0.95) !important;
+}
+
 /* Overlay Value Labels */
 #css-inspector-overlay-labels {
   position: fixed;
@@ -108,10 +158,10 @@
 .css-inspector-olabel {
   position: fixed !important;
   transform: translate(-50%, -50%) !important;
-  background: rgba(35, 35, 35, 0.85) !important;
+  background: rgba(220, 38, 38, 0.95) !important;
   color: #fff !important;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-  font-size: 10px !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 12px !important;
   font-weight: 600 !important;
   line-height: 1 !important;
   padding: 2px 5px !important;
@@ -125,6 +175,7 @@
 
 .css-inspector-olabel.visible {
   opacity: 1 !important;
+  display: block !important;
 }
 
 /* Clicked/Selected Overlay — hidden, using box model overlay instead */
@@ -197,6 +248,8 @@ body.css-inspector-mode-active * {
   box-sizing: border-box !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
   line-height: 1.5 !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
   letter-spacing: normal !important;
   text-transform: none !important;
   text-align: left;
@@ -362,6 +415,9 @@ body.css-inspector-mode-active * {
 .css-inspector-row[data-highlight]:hover {
   background-color: rgba(59, 130, 246, 0.08) !important;
 }
+.css-inspector-row.css-inspector-region-selected {
+  background-color: rgba(59, 130, 246, 0.16) !important;
+}
 .css-inspector-row:last-child {
   margin-bottom: 0 !important;
 }
@@ -451,7 +507,7 @@ body.css-inspector-mode-active * {
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-family: 'Inter', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
   margin: 8px 0 0 0 !important;
   width: 100% !important;
   user-select: none !important;
@@ -576,6 +632,19 @@ body.css-inspector-mode-active * {
   background-color: rgba(37, 99, 235, 0.15) !important;
 }
 
+.css-inspector-box-val.css-inspector-region-selected,
+.css-inspector-box-dims.css-inspector-region-selected {
+  color: #1d4ed8 !important;
+  background-color: rgba(37, 99, 235, 0.25) !important;
+  font-weight: 700 !important;
+  outline: 1.5px solid #2563eb !important;
+}
+
+.css-inspector-box.css-inspector-region-selected {
+  outline: 2px solid #2563eb !important;
+  outline-offset: -2px !important;
+}
+
 /* ── Gap Measurement Overlays ── */
 
 .css-inspector-measure-overlay {
@@ -631,7 +700,7 @@ body.css-inspector-mode-active * {
 
 .css-inspector-measure-label {
   fill: #ffffff !important;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-family: 'Inter', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   letter-spacing: 0.3px !important;
