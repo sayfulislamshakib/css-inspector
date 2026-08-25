@@ -55,12 +55,54 @@
   background-color: rgba(160, 196, 255, 0.6); /* Content blue */
 }
 
+/* Region Focus Highlight Overlay */
+#css-inspector-overlay-highlight {
+  position: fixed !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  display: none !important;
+  z-index: 5 !important;
+  transition: all 0.05s linear !important;
+}
+
+#css-inspector-overlay-highlight.active {
+  display: block !important;
+}
+
+#css-inspector-overlay-highlight.type-padding {
+  background: rgba(74, 222, 128, 0.20) !important; /* Padding green 20% */
+}
+
+#css-inspector-overlay-highlight.type-margin {
+  background: rgba(251, 146, 60, 0.20) !important; /* Margin orange 20% */
+}
+
+#css-inspector-overlay-highlight.type-border {
+  background: rgba(250, 204, 21, 0.20) !important; /* Border yellow 20% */
+}
+
+#css-inspector-overlay-highlight.type-content {
+  background: rgba(96, 165, 250, 0.20) !important; /* Content blue 20% */
+}
+
+#css-inspector-overlay-highlight.type-padding-all {
+  background: rgba(74, 222, 128, 0.20) !important;
+}
+
+#css-inspector-overlay-highlight.type-margin-all {
+  background: rgba(251, 146, 60, 0.20) !important;
+}
+
+#css-inspector-overlay-highlight.type-border-all {
+  background: rgba(250, 204, 21, 0.20) !important;
+}
+
 /* Overlay Value Labels */
 #css-inspector-overlay-labels {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: 20;
 }
 
 .css-inspector-olabel {
@@ -309,6 +351,16 @@ body.css-inspector-mode-active * {
   margin: 0 0 11px 0 !important;
   min-height: 22px !important;
   padding: 0 !important;
+  border-radius: 6px !important;
+  transition: background-color 0.15s ease !important;
+}
+.css-inspector-row[data-highlight] {
+  padding: 3px 6px !important;
+  margin: 0 -6px 8px -6px !important;
+  cursor: pointer !important;
+}
+.css-inspector-row[data-highlight]:hover {
+  background-color: rgba(59, 130, 246, 0.08) !important;
 }
 .css-inspector-row:last-child {
   margin-bottom: 0 !important;
@@ -468,11 +520,15 @@ body.css-inspector-mode-active * {
   line-height: 1 !important;
   text-align: center !important;
   cursor: pointer !important;
-  transition: color 0.15s ease !important;
+  padding: 1px 4px !important;
+  border-radius: 3px !important;
+  transition: all 0.15s ease !important;
 }
 
 .css-inspector-box-val:hover {
-  color: #2563eb !important;
+  color: #1d4ed8 !important;
+  background-color: rgba(37, 99, 235, 0.15) !important;
+  font-weight: 700 !important;
 }
 
 .css-inspector-box-top {
@@ -510,11 +566,14 @@ body.css-inspector-mode-active * {
   letter-spacing: 0.2px !important;
   white-space: nowrap !important;
   cursor: pointer !important;
-  transition: color 0.15s ease !important;
+  padding: 1px 4px !important;
+  border-radius: 3px !important;
+  transition: all 0.15s ease !important;
 }
 
 .css-inspector-box-dims:hover {
-  color: #2563eb !important;
+  color: #1d4ed8 !important;
+  background-color: rgba(37, 99, 235, 0.15) !important;
 }
 
 /* ── Gap Measurement Overlays ── */

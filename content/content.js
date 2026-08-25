@@ -13,11 +13,13 @@ let overlay = null;
 let overlayMargin = null;
 let overlayPadding = null;
 let overlayContent = null;
+let overlayHighlight = null;
 let overlayGaps = null;
 let clickedOverlay = null;
 let panel = null;
 const collapsedSections = new Set();
 let isFrameHovered = false;
+let currentHighlightedRegion = null;
 
 // Gap measurement state
 let measureTarget = null;
@@ -96,6 +98,10 @@ function init() {
   overlayContent.id = 'css-inspector-overlay-content';
   overlay.appendChild(overlayContent);
 
+  overlayHighlight = document.createElement('div');
+  overlayHighlight.id = 'css-inspector-overlay-highlight';
+  overlay.appendChild(overlayHighlight);
+
   // Create gap overlay SVG
   overlayGaps = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   overlayGaps.id = 'css-inspector-overlay-gaps';
@@ -169,15 +175,56 @@ function init() {
   document.getElementById('css-inspector-close').addEventListener('click', () => {
     panel.classList.remove('active');
     overlay.classList.remove('active');
+    if (overlayHighlight) overlayHighlight.classList.remove('active');
     overlayGaps.classList.remove('active');
     hideOverlayLabels();
     clickedOverlay.classList.remove('active');
     clickedTarget = null;
+    currentHighlightedRegion = null;
     clearMeasurement();
   });
 
-  // Delegated click-to-copy for text values, color codes, and class names
+  // Delegated hover highlight for Element Info popup (Box model & Layout rows)
   const contentEl = document.getElementById('css-inspector-content');
+  contentEl.addEventListener('mouseover', (e) => {
+    const el = clickedTarget || currentTarget;
+    if (!el) return;
+
+    // 1. Check if hovering a box model side value or dims
+    const sideEl = e.target.closest('[data-side]');
+    if (sideEl) {
+      const side = sideEl.getAttribute('data-side');
+      highlightRegion(el, side);
+      return;
+    }
+
+    // 2. Check if hovering a box model container box (margin, border, padding, content)
+    const boxEl = e.target.closest('[data-box]');
+    if (boxEl) {
+      const boxType = boxEl.getAttribute('data-box');
+      highlightRegion(el, boxType);
+      return;
+    }
+
+    // 3. Check if hovering a row with data-highlight (e.g. Padding Left, Margin Top, etc.)
+    const rowEl = e.target.closest('[data-highlight]');
+    if (rowEl) {
+      const highlightKey = rowEl.getAttribute('data-highlight');
+      highlightRegion(el, highlightKey);
+      return;
+    }
+
+    // If mouse is on something else inside panel, clear highlight
+    highlightRegion(null, null);
+  });
+
+  contentEl.addEventListener('mouseout', (e) => {
+    if (!contentEl.contains(e.relatedTarget)) {
+      highlightRegion(null, null);
+    }
+  });
+
+  // Delegated click-to-copy for text values, color codes, and class names
   contentEl.addEventListener('click', (e) => {
     if (e.target.closest('select') || e.target.closest('.css-inspector-section-title')) return;
 
@@ -366,9 +413,11 @@ function init() {
         panel.classList.remove('active');
         clickedOverlay.classList.remove('active');
         overlay.classList.remove('active');
+        if (overlayHighlight) overlayHighlight.classList.remove('active');
         overlayGaps.classList.remove('active');
         hideOverlayLabels();
         clickedTarget = null;
+        currentHighlightedRegion = null;
       } else {
         // No popup open — turn off the inspector entirely
         toggleInspector(false);
@@ -385,10 +434,12 @@ function toggleInspector(state) {
   isActive = state;
   if (!isActive) {
     overlay.classList.remove('active');
+    if (overlayHighlight) overlayHighlight.classList.remove('active');
     clickedOverlay.classList.remove('active');
     panel.classList.remove('active');
     currentTarget = null;
     clickedTarget = null;
+    currentHighlightedRegion = null;
     clearMeasurement();
     document.body.classList.remove('css-inspector-mode-active');
     showToast("Inspector: OFF");
@@ -433,12 +484,12 @@ function handleScroll(e) {
   }
 
   // Update box model overlay (margin/padding/content)
-  if (pauseOnPopup && clickedTarget) {
-    // Paused on selection: keep box model overlay on the selected element
-    updateOverlay(clickedTarget);
-  } else if (currentTarget) {
-    // Hovering: follow the hovered element
-    updateOverlay(currentTarget);
+  const activeTarget = (pauseOnPopup && clickedTarget) ? clickedTarget : currentTarget;
+  if (activeTarget) {
+    updateOverlay(activeTarget);
+    if (currentHighlightedRegion) {
+      highlightRegion(activeTarget, currentHighlightedRegion);
+    }
   }
 }
 
@@ -571,45 +622,45 @@ function updateOverlay(target) {
     switch (pos) {
       // Margin labels
       case 'margin-top':
-        lbl.textContent = mt > 0 ? `${Math.round(mt)}px` : '';
-        lbl.style.top = `${top - mt / 2}px`;
+        lbl.textContent = mt > 0 ? `${Math.round(mt)}px` : '0px';
+        lbl.style.top = `${top - (mt > 0 ? mt / 2 : 0)}px`;
         lbl.style.left = `${left + rect.width / 2}px`;
         break;
       case 'margin-bottom':
-        lbl.textContent = mb > 0 ? `${Math.round(mb)}px` : '';
-        lbl.style.top = `${top + rect.height + mb / 2}px`;
+        lbl.textContent = mb > 0 ? `${Math.round(mb)}px` : '0px';
+        lbl.style.top = `${top + rect.height + (mb > 0 ? mb / 2 : 0)}px`;
         lbl.style.left = `${left + rect.width / 2}px`;
         break;
       case 'margin-left':
-        lbl.textContent = ml > 0 ? `${Math.round(ml)}px` : '';
+        lbl.textContent = ml > 0 ? `${Math.round(ml)}px` : '0px';
         lbl.style.top = `${top + rect.height / 2}px`;
-        lbl.style.left = `${left - ml / 2}px`;
+        lbl.style.left = `${left - (ml > 0 ? ml / 2 : 0)}px`;
         break;
       case 'margin-right':
-        lbl.textContent = mr > 0 ? `${Math.round(mr)}px` : '';
+        lbl.textContent = mr > 0 ? `${Math.round(mr)}px` : '0px';
         lbl.style.top = `${top + rect.height / 2}px`;
-        lbl.style.left = `${left + rect.width + mr / 2}px`;
+        lbl.style.left = `${left + rect.width + (mr > 0 ? mr / 2 : 0)}px`;
         break;
       // Padding labels
       case 'padding-top':
-        lbl.textContent = pt > 0 ? `${Math.round(pt)}px` : '';
-        lbl.style.top = `${top + bt + pt / 2}px`;
+        lbl.textContent = pt > 0 ? `${Math.round(pt)}px` : '0px';
+        lbl.style.top = `${top + bt + (pt > 0 ? pt / 2 : 0)}px`;
         lbl.style.left = `${contentCenterX}px`;
         break;
       case 'padding-bottom':
-        lbl.textContent = pb > 0 ? `${Math.round(pb)}px` : '';
-        lbl.style.top = `${top + rect.height - bb - pb / 2}px`;
+        lbl.textContent = pb > 0 ? `${Math.round(pb)}px` : '0px';
+        lbl.style.top = `${top + rect.height - bb - (pb > 0 ? pb / 2 : 0)}px`;
         lbl.style.left = `${contentCenterX}px`;
         break;
       case 'padding-left':
-        lbl.textContent = pl > 0 ? `${Math.round(pl)}px` : '';
+        lbl.textContent = pl > 0 ? `${Math.round(pl)}px` : '0px';
         lbl.style.top = `${contentCenterY}px`;
-        lbl.style.left = `${left + bl + pl / 2}px`;
+        lbl.style.left = `${left + bl + (pl > 0 ? pl / 2 : 0)}px`;
         break;
       case 'padding-right':
-        lbl.textContent = pr > 0 ? `${Math.round(pr)}px` : '';
+        lbl.textContent = pr > 0 ? `${Math.round(pr)}px` : '0px';
         lbl.style.top = `${contentCenterY}px`;
-        lbl.style.left = `${left + rect.width - br - pr / 2}px`;
+        lbl.style.left = `${left + rect.width - br - (pr > 0 ? pr / 2 : 0)}px`;
         break;
       // Content dimensions
       case 'content-dims':
@@ -624,10 +675,28 @@ function updateOverlay(target) {
 }
 
 function showOverlayLabels(type) {
+  if (!type) {
+    hideOverlayLabels();
+    return;
+  }
   const labels = overlay.querySelectorAll('.css-inspector-olabel');
   labels.forEach(lbl => {
     const pos = lbl.dataset.pos;
-    if (pos.startsWith(type) || (type === 'content' && pos === 'content-dims')) {
+    let match = false;
+    if (pos === type) {
+      match = true;
+    } else if (type === 'padding' && pos.startsWith('padding-')) {
+      match = true;
+    } else if (type === 'padding-all' && pos.startsWith('padding-')) {
+      match = true;
+    } else if (type === 'margin' && pos.startsWith('margin-')) {
+      match = true;
+    } else if (type === 'margin-all' && pos.startsWith('margin-')) {
+      match = true;
+    } else if ((type === 'content' || type === 'content-dims') && pos === 'content-dims') {
+      match = true;
+    }
+    if (match) {
       lbl.classList.add('visible');
     } else {
       lbl.classList.remove('visible');
@@ -638,6 +707,176 @@ function showOverlayLabels(type) {
 function hideOverlayLabels() {
   const labels = overlay.querySelectorAll('.css-inspector-olabel');
   labels.forEach(lbl => lbl.classList.remove('visible'));
+}
+
+function highlightRegion(target, regionKey) {
+  currentHighlightedRegion = regionKey;
+  if (!target || !regionKey || !overlayHighlight) {
+    if (overlayHighlight) overlayHighlight.classList.remove('active');
+    hideOverlayLabels();
+    return;
+  }
+
+  const rect = target.getBoundingClientRect();
+  const styles = window.getComputedStyle(target);
+  const parseVal = (val) => parseFloat(val) || 0;
+
+  const mt = parseVal(styles.marginTop);
+  const mr = parseVal(styles.marginRight);
+  const mb = parseVal(styles.marginBottom);
+  const ml = parseVal(styles.marginLeft);
+
+  const pt = parseVal(styles.paddingTop);
+  const pr = parseVal(styles.paddingRight);
+  const pb = parseVal(styles.paddingBottom);
+  const pl = parseVal(styles.paddingLeft);
+
+  const bt = parseVal(styles.borderTopWidth);
+  const br = parseVal(styles.borderRightWidth);
+  const bb = parseVal(styles.borderBottomWidth);
+  const bl = parseVal(styles.borderLeftWidth);
+
+  const top = rect.top;
+  const left = rect.left;
+  const width = rect.width;
+  const height = rect.height;
+
+  let rTop = 0, rLeft = 0, rWidth = 0, rHeight = 0;
+  let colorType = '';
+
+  switch (regionKey) {
+    // ── Padding ──
+    case 'padding-left':
+      rTop = top + bt;
+      rLeft = left + bl;
+      rWidth = pl > 0 ? pl : 2;
+      rHeight = Math.max(0, height - bt - bb);
+      colorType = 'padding';
+      break;
+    case 'padding-right':
+      rTop = top + bt;
+      rLeft = pr > 0 ? (left + width - bl - pr) : (left + width - bl - 2);
+      rWidth = pr > 0 ? pr : 2;
+      rHeight = Math.max(0, height - bt - bb);
+      colorType = 'padding';
+      break;
+    case 'padding-top':
+      rTop = top + bt;
+      rLeft = left + bl;
+      rWidth = Math.max(0, width - bl - br);
+      rHeight = pt > 0 ? pt : 2;
+      colorType = 'padding';
+      break;
+    case 'padding-bottom':
+      rTop = pb > 0 ? (top + height - bb - pb) : (top + height - bb - 2);
+      rLeft = left + bl;
+      rWidth = Math.max(0, width - bl - br);
+      rHeight = pb > 0 ? pb : 2;
+      colorType = 'padding';
+      break;
+    case 'padding':
+      rTop = top + bt;
+      rLeft = left + bl;
+      rWidth = Math.max(0, width - bl - br);
+      rHeight = Math.max(0, height - bt - bb);
+      colorType = 'padding-all';
+      break;
+
+    // ── Margin ──
+    case 'margin-left':
+      rTop = top - mt;
+      rLeft = ml > 0 ? (left - ml) : left;
+      rWidth = ml > 0 ? ml : 2;
+      rHeight = height + mt + mb;
+      colorType = 'margin';
+      break;
+    case 'margin-right':
+      rTop = top - mt;
+      rLeft = left + width;
+      rWidth = mr > 0 ? mr : 2;
+      rHeight = height + mt + mb;
+      colorType = 'margin';
+      break;
+    case 'margin-top':
+      rTop = mt > 0 ? (top - mt) : top;
+      rLeft = left - ml;
+      rWidth = width + ml + mr;
+      rHeight = mt > 0 ? mt : 2;
+      colorType = 'margin';
+      break;
+    case 'margin-bottom':
+      rTop = top + height;
+      rLeft = left - ml;
+      rWidth = width + ml + mr;
+      rHeight = mb > 0 ? mb : 2;
+      colorType = 'margin';
+      break;
+    case 'margin':
+      rTop = top - mt;
+      rLeft = left - ml;
+      rWidth = width + ml + mr;
+      rHeight = height + mt + mb;
+      colorType = 'margin-all';
+      break;
+
+    // ── Border ──
+    case 'border-left':
+      rTop = top;
+      rLeft = left;
+      rWidth = bl > 0 ? bl : 2;
+      rHeight = height;
+      colorType = 'border';
+      break;
+    case 'border-right':
+      rTop = top;
+      rLeft = br > 0 ? (left + width - br) : (left + width - 2);
+      rWidth = br > 0 ? br : 2;
+      rHeight = height;
+      colorType = 'border';
+      break;
+    case 'border-top':
+      rTop = top;
+      rLeft = left;
+      rWidth = width;
+      rHeight = bt > 0 ? bt : 2;
+      colorType = 'border';
+      break;
+    case 'border-bottom':
+      rTop = bb > 0 ? (top + height - bb) : (top + height - 2);
+      rLeft = left;
+      rWidth = width;
+      rHeight = bb > 0 ? bb : 2;
+      colorType = 'border';
+      break;
+    case 'border':
+      rTop = top;
+      rLeft = left;
+      rWidth = width;
+      rHeight = height;
+      colorType = 'border-all';
+      break;
+
+    // ── Content ──
+    case 'content':
+      rTop = top + bt + pt;
+      rLeft = left + bl + pl;
+      rWidth = Math.max(0, width - bl - br - pl - pr);
+      rHeight = Math.max(0, height - bt - bb - pt - pb);
+      colorType = 'content';
+      break;
+  }
+
+  if (colorType) {
+    overlayHighlight.style.top = `${rTop}px`;
+    overlayHighlight.style.left = `${rLeft}px`;
+    overlayHighlight.style.width = `${rWidth}px`;
+    overlayHighlight.style.height = `${rHeight}px`;
+    overlayHighlight.className = `active type-${colorType}`;
+    showOverlayLabels(regionKey);
+  } else {
+    overlayHighlight.classList.remove('active');
+    hideOverlayLabels();
+  }
 }
 
 // Click logic
@@ -986,6 +1225,28 @@ function findPropertyClass(el, category) {
   return '';
 }
 
+function getHighlightKeyForLabel(label) {
+  if (!label) return null;
+  const l = label.toLowerCase().trim();
+  if (l === 'padding left') return 'padding-left';
+  if (l === 'padding right') return 'padding-right';
+  if (l === 'padding top') return 'padding-top';
+  if (l === 'padding bottom') return 'padding-bottom';
+  if (l === 'padding') return 'padding';
+  if (l === 'margin left') return 'margin-left';
+  if (l === 'margin right') return 'margin-right';
+  if (l === 'margin top') return 'margin-top';
+  if (l === 'margin bottom') return 'margin-bottom';
+  if (l === 'margin') return 'margin';
+  if (l.includes('border left')) return 'border-left';
+  if (l.includes('border right')) return 'border-right';
+  if (l.includes('border top')) return 'border-top';
+  if (l.includes('border bottom')) return 'border-bottom';
+  if (l === 'border' || l === 'border width' || l === 'border style') return 'border';
+  if (l === 'width' || l === 'height') return 'content';
+  return null;
+}
+
 function renderInspectorRow(label, value, category = null, el = null) {
   let classHtml = '';
   if (category && el) {
@@ -995,8 +1256,11 @@ function renderInspectorRow(label, value, category = null, el = null) {
     }
   }
 
+  const highlightKey = getHighlightKeyForLabel(label);
+  const highlightAttr = highlightKey ? ` data-highlight="${highlightKey}"` : '';
+
   return `
-    <div class="css-inspector-row">
+    <div class="css-inspector-row"${highlightAttr}>
       <span class="css-inspector-label">${label}</span>
       <div class="css-inspector-value">
         <span class="css-inspector-value-text">${value}</span>
@@ -1250,29 +1514,29 @@ function inspectElement(el, e) {
     <div class="css-inspector-section">
       <div class="css-inspector-section-title">Box Model</div>
       <div class="css-inspector-box-model">
-        <div class="css-inspector-box css-inspector-box-margin">
+        <div class="css-inspector-box css-inspector-box-margin" data-box="margin">
           <span class="css-inspector-box-label">margin</span>
-          <span class="css-inspector-box-val css-inspector-box-top">${formatBoxVal(styles.marginTop)}</span>
-          <span class="css-inspector-box-val css-inspector-box-bottom">${formatBoxVal(styles.marginBottom)}</span>
-          <span class="css-inspector-box-val css-inspector-box-left">${formatBoxVal(styles.marginLeft)}</span>
-          <span class="css-inspector-box-val css-inspector-box-right">${formatBoxVal(styles.marginRight)}</span>
+          <span class="css-inspector-box-val css-inspector-box-top" data-side="margin-top">${formatBoxVal(styles.marginTop)}</span>
+          <span class="css-inspector-box-val css-inspector-box-bottom" data-side="margin-bottom">${formatBoxVal(styles.marginBottom)}</span>
+          <span class="css-inspector-box-val css-inspector-box-left" data-side="margin-left">${formatBoxVal(styles.marginLeft)}</span>
+          <span class="css-inspector-box-val css-inspector-box-right" data-side="margin-right">${formatBoxVal(styles.marginRight)}</span>
 
-          <div class="css-inspector-box css-inspector-box-border">
+          <div class="css-inspector-box css-inspector-box-border" data-box="border">
             <span class="css-inspector-box-label">border</span>
-            <span class="css-inspector-box-val css-inspector-box-top">${formatBoxVal(styles.borderTopWidth)}</span>
-            <span class="css-inspector-box-val css-inspector-box-bottom">${formatBoxVal(styles.borderBottomWidth)}</span>
-            <span class="css-inspector-box-val css-inspector-box-left">${formatBoxVal(styles.borderLeftWidth)}</span>
-            <span class="css-inspector-box-val css-inspector-box-right">${formatBoxVal(styles.borderRightWidth)}</span>
+            <span class="css-inspector-box-val css-inspector-box-top" data-side="border-top">${formatBoxVal(styles.borderTopWidth)}</span>
+            <span class="css-inspector-box-val css-inspector-box-bottom" data-side="border-bottom">${formatBoxVal(styles.borderBottomWidth)}</span>
+            <span class="css-inspector-box-val css-inspector-box-left" data-side="border-left">${formatBoxVal(styles.borderLeftWidth)}</span>
+            <span class="css-inspector-box-val css-inspector-box-right" data-side="border-right">${formatBoxVal(styles.borderRightWidth)}</span>
 
-            <div class="css-inspector-box css-inspector-box-padding">
+            <div class="css-inspector-box css-inspector-box-padding" data-box="padding">
               <span class="css-inspector-box-label">padding</span>
-              <span class="css-inspector-box-val css-inspector-box-top">${formatBoxVal(styles.paddingTop)}</span>
-              <span class="css-inspector-box-val css-inspector-box-bottom">${formatBoxVal(styles.paddingBottom)}</span>
-              <span class="css-inspector-box-val css-inspector-box-left">${formatBoxVal(styles.paddingLeft)}</span>
-              <span class="css-inspector-box-val css-inspector-box-right">${formatBoxVal(styles.paddingRight)}</span>
+              <span class="css-inspector-box-val css-inspector-box-top" data-side="padding-top">${formatBoxVal(styles.paddingTop)}</span>
+              <span class="css-inspector-box-val css-inspector-box-bottom" data-side="padding-bottom">${formatBoxVal(styles.paddingBottom)}</span>
+              <span class="css-inspector-box-val css-inspector-box-left" data-side="padding-left">${formatBoxVal(styles.paddingLeft)}</span>
+              <span class="css-inspector-box-val css-inspector-box-right" data-side="padding-right">${formatBoxVal(styles.paddingRight)}</span>
 
-              <div class="css-inspector-box css-inspector-box-content">
-                <span class="css-inspector-box-dims">${Math.round(rect.width)} × ${Math.round(rect.height)}</span>
+              <div class="css-inspector-box css-inspector-box-content" data-box="content" data-side="content">
+                <span class="css-inspector-box-dims" data-side="content">${Math.round(rect.width)} × ${Math.round(rect.height)}</span>
               </div>
             </div>
           </div>
