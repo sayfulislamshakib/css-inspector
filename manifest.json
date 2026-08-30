@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CSS Inspector",
-  "version": "1.0",
+  "version": "2.0",
   "description": "Inspect web page elements and extract CSS properties.",
   "icons": {
     "16": "assets/icons/icon-16.png",
@@ -9,7 +9,12 @@
     "48": "assets/icons/icon-48.png",
     "128": "assets/icons/icon-128.png"
   },
-  "permissions": ["activeTab", "scripting", "contextMenus", "storage"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "storage"
+  ],
   "action": {
     "default_title": "Toggle CSS Inspector"
   },
@@ -41,6 +46,13 @@
         "mac": "Alt+B"
       },
       "description": "Toggle Block Website Interactions"
+    },
+    "toggle_measurement": {
+      "suggested_key": {
+        "default": "Alt+M",
+        "mac": "Alt+M"
+      },
+      "description": "Toggle Distance Measurement"
     }
   }
 }

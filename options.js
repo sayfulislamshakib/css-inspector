@@ -4,7 +4,8 @@
 const DEFAULT_SHORTCUTS = {
   toggleInspector: { ctrlKey: true, shiftKey: true, altKey: false, key: 'E' },
   togglePause: { ctrlKey: false, shiftKey: false, altKey: true, key: 'P' },
-  toggleBlockInteractions: { ctrlKey: false, shiftKey: false, altKey: true, key: 'B' }
+  toggleBlockInteractions: { ctrlKey: false, shiftKey: false, altKey: true, key: 'B' },
+  toggleMeasurement: { ctrlKey: false, shiftKey: false, altKey: true, key: 'M' }
 };
 
 // Current shortcut state
@@ -106,10 +107,12 @@ function restoreShortcuts() {
     const toggleInspectorEl = document.getElementById('shortcutToggleInspector');
     const togglePauseEl = document.getElementById('shortcutTogglePause');
     const toggleBlockInteractionsEl = document.getElementById('shortcutToggleBlockInteractions');
+    const toggleMeasurementEl = document.getElementById('shortcutToggleMeasurement');
     
     renderShortcutBadges(toggleInspectorEl, currentShortcuts.toggleInspector);
     renderShortcutBadges(togglePauseEl, currentShortcuts.togglePause);
     renderShortcutBadges(toggleBlockInteractionsEl, currentShortcuts.toggleBlockInteractions);
+    renderShortcutBadges(toggleMeasurementEl, currentShortcuts.toggleMeasurement);
   });
 }
 
@@ -268,6 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupShortcutRecorder(document.getElementById('shortcutToggleInspector'), 'toggleInspector');
   setupShortcutRecorder(document.getElementById('shortcutTogglePause'), 'togglePause');
   setupShortcutRecorder(document.getElementById('shortcutToggleBlockInteractions'), 'toggleBlockInteractions');
+  setupShortcutRecorder(document.getElementById('shortcutToggleMeasurement'), 'toggleMeasurement');
   
   // Clear buttons
   document.getElementById('clearToggleInspector').addEventListener('click', () => {
@@ -287,6 +291,12 @@ document.addEventListener('DOMContentLoaded', () => {
     renderShortcutBadges(document.getElementById('shortcutToggleBlockInteractions'), null);
     saveShortcuts();
   });
+
+  document.getElementById('clearToggleMeasurement').addEventListener('click', () => {
+    currentShortcuts.toggleMeasurement = null;
+    renderShortcutBadges(document.getElementById('shortcutToggleMeasurement'), null);
+    saveShortcuts();
+  });
   
   // Reset to defaults
   document.getElementById('resetShortcuts').addEventListener('click', () => {
@@ -294,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderShortcutBadges(document.getElementById('shortcutToggleInspector'), currentShortcuts.toggleInspector);
     renderShortcutBadges(document.getElementById('shortcutTogglePause'), currentShortcuts.togglePause);
     renderShortcutBadges(document.getElementById('shortcutToggleBlockInteractions'), currentShortcuts.toggleBlockInteractions);
+    renderShortcutBadges(document.getElementById('shortcutToggleMeasurement'), currentShortcuts.toggleMeasurement);
     saveShortcuts();
     showStatus('Shortcuts reset to defaults!');
   });

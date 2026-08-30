@@ -30,6 +30,20 @@ if (!window.cssInspectorInjected) {
   let measureOverlayB = null;
   let measureSvg = null;
   let isMeasuring = false;
+  let isMeasureLocked = false;
+  let isMeasurementEnabled = false;
+
+  let lastMouseX = 0;
+  let lastMouseY = 0;
+
+  function getElementUnderCursor() {
+    if (lastMouseX || lastMouseY) {
+      const elements = document.elementsFromPoint(lastMouseX, lastMouseY) || [];
+      const el = elements.find(item => item !== overlay && item !== clickedOverlay && !(item.id && item.id.startsWith('css-inspector-')) && !item.closest('#css-inspector-panel'));
+      if (el) return el;
+    }
+    return currentTarget;
+  }
 
   let isDraggingPanel = false;
   let dragStartX = 0;
@@ -55,7 +69,8 @@ if (!window.cssInspectorInjected) {
     let customShortcuts = {
       toggleInspector: { ctrlKey: true, shiftKey: true, altKey: false, key: 'E' },
       togglePause: { ctrlKey: false, shiftKey: false, altKey: true, key: 'P' },
-      toggleBlockInteractions: { ctrlKey: false, shiftKey: false, altKey: true, key: 'B' }
+      toggleBlockInteractions: { ctrlKey: false, shiftKey: false, altKey: true, key: 'B' },
+      toggleMeasurement: { ctrlKey: false, shiftKey: false, altKey: true, key: 'M' }
     };
 
     try {
@@ -491,8 +506,36 @@ if (!window.cssInspectorInjected) {
         return;
       }
 
+      // Toggle Distance Measurement shortcut
+      if (matchesShortcut(customShortcuts.toggleMeasurement)) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleMeasurementShortcut();
+        return;
+      }
+
       // ── Built-in keyboard shortcuts (only when inspector is active) ──
       if (!isActive) return;
+
+      // Instant Alt-key measuring when Alt is pressed
+      if (e.key === 'Alt') {
+        e.preventDefault();
+        const hoveredEl = getElementUnderCursor();
+        if (hoveredEl) {
+          if (clickedTarget && hoveredEl !== clickedTarget) {
+            measureTarget = hoveredEl;
+            isMeasuring = true;
+            renderMeasurement(clickedTarget, measureTarget);
+          } else {
+            const targetToMeasure = clickedTarget || hoveredEl;
+            const parentContainer = getReferenceContainer(targetToMeasure);
+            if (parentContainer && parentContainer !== targetToMeasure) {
+              isMeasuring = true;
+              renderMeasurement(parentContainer, targetToMeasure);
+            }
+          }
+        }
+      }
 
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -523,12 +566,22 @@ if (!window.cssInspectorInjected) {
         }
       }
     }, true);
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'Alt') {
+        if (isActive) e.preventDefault();
+        if (!isMeasureLocked && !isMeasurementEnabled) {
+          clearMeasurement();
+        }
+      }
+    }, true);
   }
 
   // Toggle Inspector
   function toggleInspector(state) {
     isActive = state;
     if (!isActive) {
+      isMeasurementEnabled = false;
       overlay.classList.remove('active');
       if (overlayHighlight) overlayHighlight.classList.remove('active');
       if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
@@ -578,8 +631,15 @@ if (!window.cssInspectorInjected) {
     }
 
     // Update measurement overlays on scroll
-    if (isMeasuring && clickedTarget && measureTarget) {
-      renderMeasurement(clickedTarget, measureTarget);
+    if (isMeasuring) {
+      if (clickedTarget && measureTarget) {
+        renderMeasurement(clickedTarget, measureTarget);
+      } else if (!clickedTarget && currentTarget) {
+        const parentContainer = getReferenceContainer(currentTarget);
+        if (parentContainer && parentContainer !== currentTarget) {
+          renderMeasurement(parentContainer, currentTarget);
+        }
+      }
     }
 
     // Update box model overlay (margin/padding/content)
@@ -599,6 +659,9 @@ if (!window.cssInspectorInjected) {
   function handleMouseMove(e) {
     if (!isActive || isDraggingPanel) return;
 
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+
     const target = (e.composedPath && e.composedPath()[0]) || e.target;
 
     // Ignore our own UI elements
@@ -612,17 +675,64 @@ if (!window.cssInspectorInjected) {
       } catch (err) { }
     }
 
-    // If paused on a selected element, keep box model overlay locked on it
-    if (pauseOnPopup && clickedTarget) {
+    // If an element is clicked/selected:
+    if (clickedTarget) {
+      if (isMeasureLocked) {
+        if (measureTarget) {
+          renderMeasurement(clickedTarget, measureTarget);
+        }
+        updateOverlay(clickedTarget);
+        return;
+      }
+
+      // Only measure on hover if measurement mode is enabled or user holds Alt / Shift
+      if (isMeasurementEnabled || e.altKey || e.shiftKey) {
+        if (target && target !== clickedTarget && target !== overlay && target !== clickedOverlay && !(target.id && target.id.startsWith('css-inspector-'))) {
+          measureTarget = target;
+          isMeasuring = true;
+          renderMeasurement(clickedTarget, target);
+        } else if (isMeasuring && (!target || target === clickedTarget)) {
+          clearMeasurement();
+        }
+      } else if (isMeasuring) {
+        clearMeasurement();
+      }
+
       updateOverlay(clickedTarget);
       return;
     }
 
-    if (target === currentTarget && !forceUpdateOverlay) return;
+    if (target === currentTarget && !forceUpdateOverlay) {
+      if ((isMeasurementEnabled || e.altKey) && target) {
+        const parentContainer = getReferenceContainer(target);
+        if (parentContainer && parentContainer !== target) {
+          isMeasuring = true;
+          renderMeasurement(parentContainer, target);
+        }
+      }
+      return;
+    }
     forceUpdateOverlay = false;
     currentTarget = target;
 
     updateOverlay(target);
+
+    // If measurement mode is ON (Alt+M) or holding Alt, show distance measurement in default hover state to parent container!
+    if (isMeasurementEnabled || e.altKey) {
+      if (target && target !== overlay && target !== clickedOverlay && !(target.id && target.id.startsWith('css-inspector-'))) {
+        const parentContainer = getReferenceContainer(target);
+        if (parentContainer && parentContainer !== target) {
+          isMeasuring = true;
+          renderMeasurement(parentContainer, target);
+        } else if (isMeasuring) {
+          clearMeasurement();
+        }
+      } else if (isMeasuring) {
+        clearMeasurement();
+      }
+    } else if (isMeasuring && !isMeasureLocked) {
+      clearMeasurement();
+    }
   }
 
   function updateOverlay(target) {
@@ -787,17 +897,17 @@ if (!window.cssInspectorInjected) {
           break;
         // Content / Width / Height dimensions
         case 'width':
-          lbl.textContent = `${Math.round(rect.width)}px`;
+          lbl.textContent = `W: ${Math.round(rect.width)}px`;
           lbl.style.top = `${top + rect.height / 2}px`;
           lbl.style.left = `${left + rect.width / 2}px`;
           break;
         case 'height':
-          lbl.textContent = `${Math.round(rect.height)}px`;
+          lbl.textContent = `H: ${Math.round(rect.height)}px`;
           lbl.style.top = `${top + rect.height / 2}px`;
           lbl.style.left = `${left + rect.width / 2}px`;
           break;
         case 'content-dims':
-          lbl.textContent = `${Math.round(contentW)} × ${Math.round(contentH)}`;
+          lbl.innerHTML = `<span style="color:#93c5fd;font-weight:700;">W: ${Math.round(contentW)}px</span> <span style="color:#ffffff;opacity:0.8;">×</span> <span style="color:#5eead4;font-weight:700;">H: ${Math.round(contentH)}px</span>`;
           lbl.style.top = `${contentCenterY}px`;
           lbl.style.left = `${contentCenterX}px`;
           break;
@@ -808,6 +918,80 @@ if (!window.cssInspectorInjected) {
     renderGapHighlights(target);
     if (selectedHighlightRegions.size > 0) {
       showOverlayLabels(Array.from(selectedHighlightRegions));
+    } else {
+      resolveVisibleOverlayLabelOverlaps();
+    }
+  }
+
+  function resolveVisibleOverlayLabelOverlaps() {
+    const visibleLabels = Array.from(overlay.querySelectorAll('.css-inspector-olabel.visible'));
+    if (visibleLabels.length <= 1) return;
+
+    const labelItems = visibleLabels.map(lbl => {
+      const w = lbl.offsetWidth || Math.max(38, (lbl.textContent.length * 8) + 16);
+      const h = lbl.offsetHeight || 24;
+      const x = parseFloat(lbl.style.left) || 0;
+      const y = parseFloat(lbl.style.top) || 0;
+      return {
+        el: lbl,
+        pos: lbl.dataset.pos,
+        width: w,
+        height: h,
+        x: x,
+        y: y
+      };
+    });
+
+    const padding = 6;
+    const maxIterations = 50;
+
+    for (let iter = 0; iter < maxIterations; iter++) {
+      let moved = false;
+
+      for (let i = 0; i < labelItems.length; i++) {
+        for (let j = i + 1; j < labelItems.length; j++) {
+          const b1 = labelItems[i];
+          const b2 = labelItems[j];
+
+          const w1 = b1.width / 2;
+          const h1 = b1.height / 2;
+          const w2 = b2.width / 2;
+          const h2 = b2.height / 2;
+
+          const dx = b2.x - b1.x;
+          const dy = b2.y - b1.y;
+
+          const minDistanceX = w1 + w2 + padding;
+          const minDistanceY = h1 + h2 + padding;
+
+          const overlapX = minDistanceX - Math.abs(dx);
+          const overlapY = minDistanceY - Math.abs(dy);
+
+          if (overlapX > 0 && overlapY > 0) {
+            moved = true;
+
+            if (overlapX < overlapY) {
+              const shift = (overlapX / 2) + 0.5;
+              const sign = dx >= 0 ? 1 : -1;
+              b1.x -= shift * sign;
+              b2.x += shift * sign;
+            } else {
+              const shift = (overlapY / 2) + 0.5;
+              const sign = dy >= 0 ? 1 : -1;
+              b1.y -= shift * sign;
+              b2.y += shift * sign;
+            }
+          }
+        }
+      }
+
+      if (!moved) break;
+    }
+
+    // Apply resolved positions
+    for (const item of labelItems) {
+      item.el.style.left = `${Math.round(item.x)}px`;
+      item.el.style.top = `${Math.round(item.y)}px`;
     }
   }
 
@@ -837,6 +1021,8 @@ if (!window.cssInspectorInjected) {
         lbl.classList.remove('visible');
       }
     });
+
+    resolveVisibleOverlayLabelOverlaps();
   }
 
   function hideOverlayLabels() {
@@ -1249,55 +1435,103 @@ if (!window.cssInspectorInjected) {
       e.stopPropagation();
     }
 
-    // Shift+click: measure gap between selected element and this one
-    if (e.shiftKey && clickedTarget) {
-      const elToMeasure = target || currentTarget;
-      if (elToMeasure && elToMeasure !== overlay && elToMeasure !== clickedOverlay
-        && !(elToMeasure.id && elToMeasure.id.startsWith('css-inspector-'))
-        && elToMeasure !== clickedTarget) {
-        e.preventDefault();
-        e.stopPropagation();
-        measureTarget = elToMeasure;
-        isMeasuring = true;
-        renderMeasurement(clickedTarget, measureTarget);
-        showToast('Measuring gap — press Esc to exit');
+    // Determine target element to inspect / measure
+    let el = target || currentTarget;
+    if (!el || el === overlay || el === clickedOverlay || (el.id && el.id.startsWith('css-inspector-'))) {
+      const elements = document.elementsFromPoint(e.clientX, e.clientY) || [];
+      el = elements.find(item => item !== overlay && item !== clickedOverlay && !(item.id && item.id.startsWith('css-inspector-')) && !item.closest('#css-inspector-panel'));
+    }
+
+    if (!el) return;
+
+    // Shift + click: Toggle / Lock measurement between selected element and target element
+    if (e.shiftKey) {
+      if (clickedTarget && el !== clickedTarget) {
+        if (isMeasureLocked && measureTarget === el) {
+          clearMeasurement();
+          showToast('Measurement unlocked');
+        } else {
+          measureTarget = el;
+          isMeasuring = true;
+          isMeasureLocked = true;
+          renderMeasurement(clickedTarget, measureTarget);
+          showToast('Measurement locked — press Esc to exit');
+        }
+        return;
+      } else if (!clickedTarget) {
+        clickedTarget = el;
+        inspectElement(el, e);
+        updateOverlay(el);
         return;
       }
     }
 
-    // Regular click clears measurement if active
-    if (isMeasuring) {
+    // Regular click (no Shift):
+    if (isMeasureLocked) {
       clearMeasurement();
     }
 
-    // If popup is showing and pauseOnPopup is true, the inspector is paused
-    if (pauseOnPopup && clickedTarget) {
-      return;
-    }
+    if (el === clickedTarget) return;
 
-    const elToInspect = target || currentTarget;
-    if (elToInspect && elToInspect !== overlay && elToInspect !== clickedOverlay && !(elToInspect.id && elToInspect.id.startsWith('css-inspector-'))) {
-      clickedTarget = elToInspect;
-      inspectElement(elToInspect, e);
-      // Ensure box model overlay stays visible on selected element
-      updateOverlay(elToInspect);
-      setTimeout(() => {
-        if (clickedTarget) updateOverlay(clickedTarget);
-      }, 50);
-    }
+    clickedTarget = el;
+    isMeasuring = false;
+    isMeasureLocked = false;
+    measureTarget = null;
+    inspectElement(el, e);
+    updateOverlay(el);
+    setTimeout(() => {
+      if (clickedTarget) updateOverlay(clickedTarget);
+    }, 50);
   }
 
   // ── Gap Measurement System ──
 
+  function getReferenceContainer(target) {
+    if (!target || !target.parentElement) return null;
+    return target.offsetParent || target.parentElement || document.body;
+  }
+
+  function toggleMeasurementShortcut() {
+    if (!isActive) return;
+    isMeasurementEnabled = !isMeasurementEnabled;
+    if (!isMeasurementEnabled) {
+      clearMeasurement();
+      showToast("Distance Measurement: OFF");
+    } else {
+      isMeasuring = true;
+      if (clickedTarget && currentTarget && currentTarget !== clickedTarget) {
+        measureTarget = currentTarget;
+        renderMeasurement(clickedTarget, measureTarget);
+      } else if (currentTarget) {
+        const parentContainer = getReferenceContainer(currentTarget);
+        if (parentContainer && parentContainer !== currentTarget) {
+          renderMeasurement(parentContainer, currentTarget);
+        }
+      }
+      showToast("Distance Measurement: ON");
+    }
+  }
+
+  let pendingBadges = [];
+
   function clearMeasurement() {
     isMeasuring = false;
+    isMeasureLocked = false;
     measureTarget = null;
+    pendingBadges = [];
     if (measureOverlay) measureOverlay.classList.remove('active');
     if (measureOverlayB) measureOverlayB.classList.remove('active');
     if (measureSvg) measureSvg.classList.remove('active');
   }
 
   function renderMeasurement(elA, elB) {
+    if (!elA || !elB || elA === elB) {
+      clearMeasurement();
+      return;
+    }
+
+    pendingBadges = [];
+
     const rectA = elA.getBoundingClientRect();
     const rectB = elB.getBoundingClientRect();
 
@@ -1314,12 +1548,6 @@ if (!window.cssInspectorInjected) {
     measureOverlayB.style.height = `${rectB.height}px`;
     measureOverlayB.classList.add('active');
 
-    // Calculate gaps
-    // Horizontal gap: distance between nearest horizontal edges
-    // Vertical gap: distance between nearest vertical edges
-    const hGap = calcEdgeGap(rectA.left, rectA.right, rectB.left, rectB.right);
-    const vGap = calcEdgeGap(rectA.top, rectA.bottom, rectB.top, rectB.bottom);
-
     // Prepare SVG
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -1329,56 +1557,127 @@ if (!window.cssInspectorInjected) {
     measureSvg.classList.add('active');
     measureSvg.innerHTML = '';
 
-    const midAx = rectA.left + rectA.width / 2;
-    const midAy = rectA.top + rectA.height / 2;
-    const midBx = rectB.left + rectB.width / 2;
-    const midBy = rectB.top + rectB.height / 2;
+    // Check if elements are disjoint or nested/overlapping
+    const isDisjointH = rectA.right <= rectB.left || rectB.right <= rectA.left;
+    const isDisjointV = rectA.bottom <= rectB.top || rectB.bottom <= rectA.top;
 
-    // Draw horizontal measurement line if there's a gap
-    if (hGap.distance > 0) {
-      const y = Math.max(Math.min(midAy, midBy), Math.max(rectA.top, rectB.top));
-      const clampedY = Math.min(y, Math.min(rectA.bottom, rectB.bottom));
-      const finalY = (y + clampedY) / 2 || Math.min(midAy, midBy);
-      drawMeasureLine(measureSvg, hGap.startEdge, finalY, hGap.endEdge, finalY, Math.round(hGap.distance), 'horizontal');
-    }
+    if (isDisjointH || isDisjointV) {
+      // ── Disjoint / Adjacent Elements ──
+      // Horizontal gap
+      if (rectA.right <= rectB.left) {
+        const dist = rectB.left - rectA.right;
+        const vOverlap = Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top);
+        const y = vOverlap > 0
+          ? (Math.max(rectA.top, rectB.top) + Math.min(rectA.bottom, rectB.bottom)) / 2
+          : (rectA.top + rectA.bottom) / 2;
+        drawMeasureLine(measureSvg, rectA.right, y, rectB.left, y, dist, 'horizontal', 'gap-h');
+      } else if (rectB.right <= rectA.left) {
+        const dist = rectA.left - rectB.right;
+        const vOverlap = Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top);
+        const y = vOverlap > 0
+          ? (Math.max(rectA.top, rectB.top) + Math.min(rectA.bottom, rectB.bottom)) / 2
+          : (rectA.top + rectA.bottom) / 2;
+        drawMeasureLine(measureSvg, rectB.right, y, rectA.left, y, dist, 'horizontal', 'gap-h');
+      }
 
-    // Draw vertical measurement line if there's a gap
-    if (vGap.distance > 0) {
-      const x = Math.max(Math.min(midAx, midBx), Math.max(rectA.left, rectB.left));
-      const clampedX = Math.min(x, Math.min(rectA.right, rectB.right));
-      const finalX = (x + clampedX) / 2 || Math.min(midAx, midBx);
-      drawMeasureLine(measureSvg, finalX, vGap.startEdge, finalX, vGap.endEdge, Math.round(vGap.distance), 'vertical');
-    }
-
-    // If elements overlap in both axes, show overlap info
-    if (hGap.distance <= 0 && vGap.distance <= 0) {
-      const overlapLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      overlapLabel.setAttribute('x', (midAx + midBx) / 2);
-      overlapLabel.setAttribute('y', (midAy + midBy) / 2);
-      overlapLabel.setAttribute('text-anchor', 'middle');
-      overlapLabel.setAttribute('dominant-baseline', 'middle');
-      overlapLabel.setAttribute('class', 'css-inspector-measure-text-overlap');
-      overlapLabel.textContent = 'Overlapping';
-      measureSvg.appendChild(overlapLabel);
-    }
-  }
-
-  function calcEdgeGap(aStart, aEnd, bStart, bEnd) {
-    // Returns the gap between two ranges and which edges form that gap
-    if (aEnd <= bStart) {
-      // A is entirely before B
-      return { distance: bStart - aEnd, startEdge: aEnd, endEdge: bStart };
-    } else if (bEnd <= aStart) {
-      // B is entirely before A
-      return { distance: aStart - bEnd, startEdge: bEnd, endEdge: aStart };
+      // Vertical gap
+      if (rectA.bottom <= rectB.top) {
+        const dist = rectB.top - rectA.bottom;
+        const hOverlap = Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left);
+        const x = hOverlap > 0
+          ? (Math.max(rectA.left, rectB.left) + Math.min(rectA.right, rectB.right)) / 2
+          : (rectA.left + rectA.right) / 2;
+        drawMeasureLine(measureSvg, x, rectA.bottom, x, rectB.top, dist, 'vertical', 'gap-v');
+      } else if (rectB.bottom <= rectA.top) {
+        const dist = rectA.top - rectB.bottom;
+        const hOverlap = Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left);
+        const x = hOverlap > 0
+          ? (Math.max(rectA.left, rectB.left) + Math.min(rectA.right, rectB.right)) / 2
+          : (rectA.left + rectA.right) / 2;
+        drawMeasureLine(measureSvg, x, rectB.bottom, x, rectA.top, dist, 'vertical', 'gap-v');
+      }
     } else {
-      // They overlap
-      return { distance: 0, startEdge: 0, endEdge: 0 };
+      // ── Nested / Overlapping Elements (4-direction edge distances) ──
+      const innerCenterX = (rectB.left + rectB.right) / 2;
+      const innerCenterY = (rectB.top + rectB.bottom) / 2;
+
+      // 1. Top distance
+      const topDist = Math.abs(rectB.top - rectA.top);
+      if (Math.round(topDist) > 0) {
+        const topY1 = Math.min(rectA.top, rectB.top);
+        const topY2 = Math.max(rectA.top, rectB.top);
+        drawMeasureLine(measureSvg, innerCenterX, topY1, innerCenterX, topY2, topDist, 'vertical', 'top');
+      }
+
+      // 2. Bottom distance
+      const bottomDist = Math.abs(rectA.bottom - rectB.bottom);
+      if (Math.round(bottomDist) > 0) {
+        const botY1 = Math.min(rectA.bottom, rectB.bottom);
+        const botY2 = Math.max(rectA.bottom, rectB.bottom);
+        drawMeasureLine(measureSvg, innerCenterX, botY1, innerCenterX, botY2, bottomDist, 'vertical', 'bottom');
+      }
+
+      // 3. Left distance
+      const leftDist = Math.abs(rectB.left - rectA.left);
+      if (Math.round(leftDist) > 0) {
+        const leftX1 = Math.min(rectA.left, rectB.left);
+        const leftX2 = Math.max(rectA.left, rectB.left);
+        drawMeasureLine(measureSvg, leftX1, innerCenterY, leftX2, innerCenterY, leftDist, 'horizontal', 'left');
+      }
+
+      // 4. Right distance
+      const rightDist = Math.abs(rectA.right - rectB.right);
+      if (Math.round(rightDist) > 0) {
+        const rightX1 = Math.min(rectA.right, rectB.right);
+        const rightX2 = Math.max(rectA.right, rectB.right);
+        drawMeasureLine(measureSvg, rightX1, innerCenterY, rightX2, innerCenterY, rightDist, 'horizontal', 'right');
+      }
     }
+
+    // Hovered item's width & height dimension badge
+    const bw = Math.round(rectB.width);
+    const bh = Math.round(rectB.height);
+    if (bw > 0 && bh > 0) {
+      queueDimensionsBadge(rectB, bw, bh);
+    }
+
+    // Solve all overlaps across all badges in this frame
+    resolveAllBadgeOverlaps(pendingBadges);
+
+    // Draw all non-overlapping badges on SVG
+    renderAllBadges(measureSvg, pendingBadges);
   }
 
-  function drawMeasureLine(svg, x1, y1, x2, y2, distance, direction) {
+  function queueDimensionsBadge(targetRect, width, height) {
+    const labelText = `${width} × ${height}px`;
+    const paddingX = 8;
+    const textWidth = Math.max(24, labelText.length * 7.5);
+    const rectWidth = Math.max(50, textWidth + paddingX * 2);
+    const rectHeight = 24;
+
+    let initX = targetRect.left + targetRect.width / 2;
+    let initY = targetRect.bottom + rectHeight / 2 + 8;
+
+    // If element is big enough, center inside it
+    if (targetRect.width >= rectWidth + 12 && targetRect.height >= rectHeight + 12) {
+      initX = targetRect.left + targetRect.width / 2;
+      initY = targetRect.top + targetRect.height / 2;
+    }
+
+    pendingBadges.push({
+      text: labelText,
+      width: rectWidth,
+      height: rectHeight,
+      x: initX,
+      y: initY,
+      zone: 'dim'
+    });
+  }
+
+  function drawMeasureLine(svg, x1, y1, x2, y2, distance, direction, zone) {
+    if (distance <= 0) return;
     const ns = 'http://www.w3.org/2000/svg';
+    const color = (zone === 'gap-h' || zone === 'gap-v') ? '#8b5cf6' : '#ff3311';
 
     // Main measurement line
     const line = document.createElementNS(ns, 'line');
@@ -1386,59 +1685,239 @@ if (!window.cssInspectorInjected) {
     line.setAttribute('y1', y1);
     line.setAttribute('x2', x2);
     line.setAttribute('y2', y2);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', '1.5');
     line.setAttribute('class', 'css-inspector-measure-line');
+    line.style.setProperty('stroke', color, 'important');
+    line.style.setProperty('stroke-width', '1.5px', 'important');
     svg.appendChild(line);
 
-    // Cap lines (end markers)
-    const capLen = 8;
+    // Cap lines (end markers - perpendicular T-caps)
+    const capLen = 7;
     if (direction === 'horizontal') {
-      // Vertical caps at both ends
-      drawCapLine(svg, x1, y1 - capLen, x1, y1 + capLen);
-      drawCapLine(svg, x2, y2 - capLen, x2, y2 + capLen);
+      drawCapLine(svg, x1, y1 - capLen, x1, y1 + capLen, color);
+      drawCapLine(svg, x2, y2 - capLen, x2, y2 + capLen, color);
     } else {
-      // Horizontal caps at both ends
-      drawCapLine(svg, x1 - capLen, y1, x1 + capLen, y1);
-      drawCapLine(svg, x2 - capLen, y2, x2 + capLen, y2);
+      drawCapLine(svg, x1 - capLen, y1, x1 + capLen, y1, color);
+      drawCapLine(svg, x2 - capLen, y2, x2 + capLen, y2, color);
     }
 
-    // Distance label
-    const midX = (x1 + x2) / 2;
-    const midY = (y1 + y2) / 2;
+    // Distance label metrics
+    const labelText = `${Math.round(distance)}px`;
+    const paddingX = 8;
+    const textWidth = Math.max(20, labelText.length * 8);
+    const rectWidth = Math.max(38, textWidth + paddingX * 2);
+    const rectHeight = 26;
 
-    // Background rect for label
-    const labelText = `${distance}px`;
-    const padding = 4;
-    const fontSize = 11;
-    const textWidth = labelText.length * 7;
-    const rectWidth = textWidth + padding * 2;
-    const rectHeight = fontSize + padding * 2;
+    let initX = (x1 + x2) / 2;
+    let initY = (y1 + y2) / 2;
 
-    const labelBg = document.createElementNS(ns, 'rect');
-    labelBg.setAttribute('x', midX - rectWidth / 2);
-    labelBg.setAttribute('y', midY - rectHeight / 2);
-    labelBg.setAttribute('width', rectWidth);
-    labelBg.setAttribute('height', rectHeight);
-    labelBg.setAttribute('rx', '4');
-    labelBg.setAttribute('class', 'css-inspector-measure-label-bg');
-    svg.appendChild(labelBg);
+    if (zone === 'top') {
+      initY = Math.min(y1, y2) + Math.abs(y2 - y1) / 2;
+      if (Math.abs(y2 - y1) < rectHeight + 8) {
+        initY = Math.min(y1, y2) - rectHeight / 2 - 4;
+      }
+    } else if (zone === 'bottom') {
+      initY = Math.min(y1, y2) + Math.abs(y2 - y1) / 2;
+      if (Math.abs(y2 - y1) < rectHeight + 8) {
+        initY = Math.max(y1, y2) + rectHeight / 2 + 4;
+      }
+    } else if (zone === 'left') {
+      initX = Math.min(x1, x2) + Math.abs(x2 - x1) / 2;
+      if (Math.abs(x2 - x1) < rectWidth + 8) {
+        initX = Math.min(x1, x2) - rectWidth / 2 - 4;
+      }
+    } else if (zone === 'right') {
+      initX = Math.min(x1, x2) + Math.abs(x2 - x1) / 2;
+      if (Math.abs(x2 - x1) < rectWidth + 8) {
+        initX = Math.max(x1, x2) + rectWidth / 2 + 4;
+      }
+    }
 
-    const text = document.createElementNS(ns, 'text');
-    text.setAttribute('x', midX);
-    text.setAttribute('y', midY);
-    text.setAttribute('text-anchor', 'middle');
-    text.setAttribute('dominant-baseline', 'central');
-    text.setAttribute('class', 'css-inspector-measure-label');
-    text.textContent = labelText;
-    svg.appendChild(text);
+    const badgeColor = (zone === 'gap-h' || zone === 'gap-v') ? '#8b5cf6' : '#ff3311';
+
+    pendingBadges.push({
+      text: labelText,
+      width: rectWidth,
+      height: rectHeight,
+      x: initX,
+      y: initY,
+      zone: zone,
+      color: badgeColor
+    });
   }
 
-  function drawCapLine(svg, x1, y1, x2, y2) {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  function queueDimensionsBadge(targetRect, width, height) {
+    const labelText = `W: ${width}px × H: ${height}px`;
+    const paddingX = 8;
+    const textWidth = Math.max(28, labelText.length * 7.5);
+    const rectWidth = Math.max(68, textWidth + paddingX * 2);
+    const rectHeight = 24;
+
+    let initX = targetRect.left + targetRect.width / 2;
+    let initY = targetRect.bottom + rectHeight / 2 + 8;
+
+    // If element is big enough, center inside it
+    if (targetRect.width >= rectWidth + 12 && targetRect.height >= rectHeight + 12) {
+      initX = targetRect.left + targetRect.width / 2;
+      initY = targetRect.top + targetRect.height / 2;
+    }
+
+    pendingBadges.push({
+      text: labelText,
+      widthVal: width,
+      heightVal: height,
+      isDual: true,
+      width: rectWidth,
+      height: rectHeight,
+      x: initX,
+      y: initY,
+      zone: 'dim',
+      color: '#1e293b' // Dark pill for dual color contrast
+    });
+  }
+
+  function resolveAllBadgeOverlaps(badges) {
+    if (!badges || badges.length <= 1) return;
+    const padding = 6;
+    const maxIterations = 50;
+
+    for (let iter = 0; iter < maxIterations; iter++) {
+      let moved = false;
+
+      for (let i = 0; i < badges.length; i++) {
+        for (let j = i + 1; j < badges.length; j++) {
+          const b1 = badges[i];
+          const b2 = badges[j];
+
+          const w1 = b1.width / 2;
+          const h1 = b1.height / 2;
+          const w2 = b2.width / 2;
+          const h2 = b2.height / 2;
+
+          const dx = b2.x - b1.x;
+          const dy = b2.y - b1.y;
+
+          const minDistanceX = w1 + w2 + padding;
+          const minDistanceY = h1 + h2 + padding;
+
+          const overlapX = minDistanceX - Math.abs(dx);
+          const overlapY = minDistanceY - Math.abs(dy);
+
+          if (overlapX > 0 && overlapY > 0) {
+            moved = true;
+
+            if (overlapX < overlapY) {
+              const shift = (overlapX / 2) + 0.5;
+              const sign = dx >= 0 ? 1 : -1;
+              b1.x -= shift * sign;
+              b2.x += shift * sign;
+            } else {
+              const shift = (overlapY / 2) + 0.5;
+              const sign = dy >= 0 ? 1 : -1;
+              b1.y -= shift * sign;
+              b2.y += shift * sign;
+            }
+          }
+        }
+      }
+
+      if (!moved) break;
+    }
+
+    // Keep within screen bounds
+    for (const b of badges) {
+      const halfW = b.width / 2;
+      const halfH = b.height / 2;
+      b.x = Math.max(halfW + 8, Math.min(window.innerWidth - halfW - 8, b.x));
+      b.y = Math.max(halfH + 8, Math.min(window.innerHeight - halfH - 8, b.y));
+    }
+  }
+
+  function renderAllBadges(svg, badges) {
+    const ns = 'http://www.w3.org/2000/svg';
+
+    for (const b of badges) {
+      const rectWidth = b.width;
+      const rectHeight = b.height;
+      const badgeX = b.x;
+      const badgeY = b.y;
+      const badgeColor = b.color || '#ff3311';
+
+      const labelBg = document.createElementNS(ns, 'rect');
+      labelBg.setAttribute('x', badgeX - rectWidth / 2);
+      labelBg.setAttribute('y', badgeY - rectHeight / 2);
+      labelBg.setAttribute('width', rectWidth);
+      labelBg.setAttribute('height', rectHeight);
+      labelBg.setAttribute('rx', 6);
+      labelBg.setAttribute('ry', 6);
+      labelBg.setAttribute('fill', badgeColor);
+      labelBg.setAttribute('class', 'css-inspector-measure-label-bg');
+      labelBg.style.setProperty('fill', badgeColor, 'important');
+      if (b.isDual) {
+        labelBg.setAttribute('stroke', '#3b82f6');
+        labelBg.setAttribute('stroke-width', '1');
+      }
+      svg.appendChild(labelBg);
+
+      if (b.isDual) {
+        const text = document.createElementNS(ns, 'text');
+        text.setAttribute('x', badgeX);
+        text.setAttribute('y', badgeY);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'central');
+        text.setAttribute('font-family', "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif");
+        text.style.setProperty('font-family', "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", 'important');
+        text.style.setProperty('font-size', '12px', 'important');
+        text.style.setProperty('font-weight', '600', 'important');
+
+        const tspanW = document.createElementNS(ns, 'tspan');
+        tspanW.setAttribute('fill', '#93c5fd'); // Width Blue
+        tspanW.textContent = `W: ${b.widthVal}px`;
+        text.appendChild(tspanW);
+
+        const tspanX = document.createElementNS(ns, 'tspan');
+        tspanX.setAttribute('fill', '#ffffff');
+        tspanX.setAttribute('opacity', '0.75');
+        tspanX.textContent = ' × ';
+        text.appendChild(tspanX);
+
+        const tspanH = document.createElementNS(ns, 'tspan');
+        tspanH.setAttribute('fill', '#5eead4'); // Height Teal
+        tspanH.textContent = `H: ${b.heightVal}px`;
+        text.appendChild(tspanH);
+
+        svg.appendChild(text);
+      } else {
+        const text = document.createElementNS(ns, 'text');
+        text.setAttribute('x', badgeX);
+        text.setAttribute('y', badgeY);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'central');
+        text.setAttribute('fill', '#ffffff');
+        text.setAttribute('class', 'css-inspector-measure-label');
+        text.style.setProperty('fill', '#ffffff', 'important');
+        text.style.setProperty('font-family', "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", 'important');
+        text.style.setProperty('font-size', '12px', 'important');
+        text.style.setProperty('font-weight', '600', 'important');
+        text.textContent = b.text;
+        svg.appendChild(text);
+      }
+    }
+  }
+
+  function drawCapLine(svg, x1, y1, x2, y2, color = '#ff3311') {
+    const ns = 'http://www.w3.org/2000/svg';
+    const line = document.createElementNS(ns, 'line');
     line.setAttribute('x1', x1);
     line.setAttribute('y1', y1);
     line.setAttribute('x2', x2);
     line.setAttribute('y2', y2);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', '1.5');
     line.setAttribute('class', 'css-inspector-measure-cap');
+    line.style.setProperty('stroke', color, 'important');
+    line.style.setProperty('stroke-width', '1.5px', 'important');
     svg.appendChild(line);
   }
 
@@ -1909,7 +2388,7 @@ if (!window.cssInspectorInjected) {
               <span class="css-inspector-box-val css-inspector-box-right" data-side="padding-right">${formatBoxVal(styles.paddingRight)}</span>
 
               <div class="css-inspector-box css-inspector-box-content" data-box="content" data-side="content">
-                <span class="css-inspector-box-dims" data-side="content">${Math.round(rect.width)} × ${Math.round(rect.height)}</span>
+                <span class="css-inspector-box-dims" data-side="content"><span style="color:#60a5fa;font-weight:600;">W: ${Math.round(rect.width)}</span> × <span style="color:#2dd4bf;font-weight:600;">H: ${Math.round(rect.height)}</span></span>
               </div>
             </div>
           </div>
@@ -2035,6 +2514,8 @@ if (!window.cssInspectorInjected) {
       const newState = request.isActive !== undefined ? request.isActive : !isActive;
       toggleInspector(newState);
       sendResponse({ success: true, isActive: newState });
+    } else if (request.action === 'toggleMeasurementShortcut') {
+      toggleMeasurementShortcut();
     }
   });
 
