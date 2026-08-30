@@ -118,3 +118,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }).catch(() => {});
   }
 });
+
+// Clear badge on tab refresh or navigation
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'loading') {
+    chrome.action.setBadgeText({ text: "", tabId: tabId });
+  }
+});

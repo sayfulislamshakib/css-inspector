@@ -36,11 +36,112 @@ if (!window.cssInspectorInjected) {
   let lastMouseX = 0;
   let lastMouseY = 0;
 
+  function isOurUI(el) {
+    if (!el) return true;
+    if (el === overlay || el === clickedOverlay) return true;
+    if (el.id && el.id.startsWith('css-inspector-')) return true;
+    if (el.closest && el.closest('#css-inspector-panel')) return true;
+    return false;
+  }
+
+  function getDeepestElementAt(x, y, initialTarget) {
+    // 1. Gather all elements intersecting the coordinate (x, y)
+    const rawElements = (document.elementsFromPoint(x, y) || []).filter(el => !isOurUI(el));
+
+    if (rawElements.length === 0) {
+      if (initialTarget && !isOurUI(initialTarget)) return initialTarget;
+      return null;
+    }
+
+    // 2. Collect all candidates (including Shadow DOM & deeper children even with pointer-events: none)
+    const candidates = new Set(rawElements);
+
+    for (const el of rawElements) {
+      // Explore shadow root
+      if (el.shadowRoot && el.shadowRoot.elementFromPoint) {
+        try {
+          const shadowEl = el.shadowRoot.elementFromPoint(x, y);
+          if (shadowEl && !isOurUI(shadowEl)) {
+            candidates.add(shadowEl);
+          }
+        } catch (e) { }
+      }
+
+      // Explore direct children and nested descendants
+      if (el.children && el.children.length > 0) {
+        const stack = Array.from(el.children);
+        let count = 0;
+        while (stack.length > 0 && count < 60) {
+          count++;
+          const child = stack.pop();
+          if (isOurUI(child)) continue;
+
+          const r = child.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+            candidates.add(child);
+            if (child.children && child.children.length > 0) {
+              stack.push(...Array.from(child.children));
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Find the most specific element (smallest bounding box area & greatest DOM depth)
+    let bestEl = null;
+    let minArea = Infinity;
+    let maxDepth = -1;
+
+    function getDepth(el) {
+      let d = 0;
+      let p = el.parentElement;
+      while (p) {
+        d++;
+        p = p.parentElement;
+      }
+      return d;
+    }
+
+    for (const el of candidates) {
+      if (el === document.body || el === document.documentElement) continue;
+
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+
+      const area = r.width * r.height;
+      const depth = getDepth(el);
+
+      if (bestEl === null) {
+        bestEl = el;
+        minArea = area;
+        maxDepth = depth;
+      } else {
+        // If area is noticeably smaller, it's the more specific nested element
+        if (area < minArea * 0.95) {
+          bestEl = el;
+          minArea = area;
+          maxDepth = depth;
+        } else if (Math.abs(area - minArea) <= minArea * 0.05) {
+          // If area is nearly the same, pick the deeper descendant in the DOM tree
+          if (depth > maxDepth) {
+            bestEl = el;
+            minArea = area;
+            maxDepth = depth;
+          }
+        }
+      }
+    }
+
+    return bestEl || rawElements[0] || initialTarget;
+  }
+
   function getElementUnderCursor() {
     if (lastMouseX || lastMouseY) {
-      const elements = document.elementsFromPoint(lastMouseX, lastMouseY) || [];
-      const el = elements.find(item => item !== overlay && item !== clickedOverlay && !(item.id && item.id.startsWith('css-inspector-')) && !item.closest('#css-inspector-panel'));
-      if (el) return el;
+      return getDeepestElementAt(lastMouseX, lastMouseY, null);
     }
     return currentTarget;
   }
@@ -662,11 +763,11 @@ if (!window.cssInspectorInjected) {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
 
-    const target = (e.composedPath && e.composedPath()[0]) || e.target;
+    const rawTarget = (e.composedPath && e.composedPath()[0]) || e.target;
+    if (isOurUI(rawTarget)) return;
 
-    // Ignore our own UI elements
-    if ((target.closest && target.closest('#css-inspector-panel')) || target === overlay || target === clickedOverlay) return;
-    if (target.id && target.id.startsWith('css-inspector-')) return;
+    const target = getDeepestElementAt(e.clientX, e.clientY, rawTarget);
+    if (!target || isOurUI(target)) return;
 
     if (!isFrameHovered) {
       isFrameHovered = true;
@@ -1328,24 +1429,24 @@ if (!window.cssInspectorInjected) {
         colorType = 'content';
         break;
       case 'content':
-        rTop = top + bt + pt;
-        rLeft = left + bl + pl;
-        rWidth = Math.max(0, width - bl - br - pl - pr);
-        rHeight = Math.max(0, height - bt - bb - pt - pb);
-        colorType = 'content';
-        break;
-    }
+        return { top: rect.top + bt + pt, left: rect.left + bl + pl, width: contentW, height: contentH, colorType: 'content' };
 
-    if (!colorType) return null;
-    return { top: rTop, left: rLeft, width: rWidth, height: rHeight, colorType };
+      case 'gap':
+        return null;
+
+      default:
+        return null;
+    }
   }
 
   function highlightRegion(target, regionKey) {
-    const activeEl = target || (pauseOnPopup && clickedTarget) || clickedTarget || currentTarget;
+    if (!overlayHighlight) return;
     currentHighlightedRegion = regionKey;
-    if (!activeEl || !regionKey || !overlayHighlight) {
-      if (overlayHighlight) overlayHighlight.classList.remove('active');
-      renderGapHighlights(activeEl);
+
+    const activeEl = target || (pauseOnPopup && clickedTarget) || clickedTarget || currentTarget;
+
+    if (!activeEl || !regionKey) {
+      overlayHighlight.classList.remove('active');
       if (selectedHighlightRegions.size > 0) {
         if (activeEl) updateOverlay(activeEl);
         showOverlayLabels(Array.from(selectedHighlightRegions));
@@ -1422,10 +1523,10 @@ if (!window.cssInspectorInjected) {
   function handleClick(e) {
     if (!isActive) return;
 
-    const target = (e.composedPath && e.composedPath()[0]) || e.target;
+    const rawTarget = (e.composedPath && e.composedPath()[0]) || e.target;
 
     // If clicking inside panel, let it work normally
-    if (target.closest && target.closest('#css-inspector-panel')) {
+    if (rawTarget && rawTarget.closest && rawTarget.closest('#css-inspector-panel')) {
       return;
     }
 
@@ -1435,14 +1536,10 @@ if (!window.cssInspectorInjected) {
       e.stopPropagation();
     }
 
-    // Determine target element to inspect / measure
-    let el = target || currentTarget;
-    if (!el || el === overlay || el === clickedOverlay || (el.id && el.id.startsWith('css-inspector-'))) {
-      const elements = document.elementsFromPoint(e.clientX, e.clientY) || [];
-      el = elements.find(item => item !== overlay && item !== clickedOverlay && !(item.id && item.id.startsWith('css-inspector-')) && !item.closest('#css-inspector-panel'));
-    }
+    // Determine deepest target element to inspect / measure
+    let el = getDeepestElementAt(e.clientX, e.clientY, rawTarget) || currentTarget;
 
-    if (!el) return;
+    if (!el || isOurUI(el)) return;
 
     // Shift + click: Toggle / Lock measurement between selected element and target element
     if (e.shiftKey) {
@@ -1499,20 +1596,20 @@ if (!window.cssInspectorInjected) {
       showToast("Distance Measurement: OFF");
     } else {
       isMeasuring = true;
-      if (clickedTarget && currentTarget && currentTarget !== clickedTarget) {
-        measureTarget = currentTarget;
+      const hovered = getElementUnderCursor();
+      if (clickedTarget && hovered && hovered !== clickedTarget) {
+        measureTarget = hovered;
         renderMeasurement(clickedTarget, measureTarget);
-      } else if (currentTarget) {
-        const parentContainer = getReferenceContainer(currentTarget);
-        if (parentContainer && parentContainer !== currentTarget) {
-          renderMeasurement(parentContainer, currentTarget);
+      } else if (hovered) {
+        const parentContainer = getReferenceContainer(hovered);
+        if (parentContainer && parentContainer !== hovered) {
+          renderMeasurement(parentContainer, hovered);
         }
       }
       showToast("Distance Measurement: ON");
     }
   }
 
-  let pendingBadges = [];
 
   function clearMeasurement() {
     isMeasuring = false;
