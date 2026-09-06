@@ -44,6 +44,35 @@ if (!window.cssInspectorInjected) {
     return false;
   }
 
+  function formatDimension(val) {
+    if (val === null || val === undefined) return '0';
+    const num = typeof val === 'number' ? val : parseFloat(val);
+    if (isNaN(num)) return String(val);
+    if (num === 0) return '0';
+    // Browser DevTools standard: round to 2 decimal places with EPSILON guard, omitting trailing zeroes
+    const rounded = Math.round((num + Number.EPSILON) * 100) / 100;
+    return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2).replace(/\.?0+$/, '');
+  }
+
+  function formatPx(val) {
+    if (val === null || val === undefined) return '0px';
+    if (typeof val === 'string') {
+      if (val === 'normal' || val === 'none' || val === 'auto') return val;
+      if (val.endsWith('px')) {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+          return `${formatDimension(num)}px`;
+        }
+        return val;
+      }
+    }
+    const num = parseFloat(val);
+    if (!isNaN(num)) {
+      return `${formatDimension(num)}px`;
+    }
+    return `${val}px`;
+  }
+
   function getDeepestElementAt(x, y, initialTarget) {
     // 1. Gather all elements intersecting the coordinate (x, y)
     const rawElements = (document.elementsFromPoint(x, y) || []).filter(el => !isOurUI(el));
@@ -925,8 +954,14 @@ if (!window.cssInspectorInjected) {
 
     // Update overlay value labels positions and text
     const labels = overlay.querySelectorAll('.css-inspector-olabel');
-    const contentW = Math.max(0, rect.width - bl - br - pl - pr);
-    const contentH = Math.max(0, rect.height - bt - bb - pt - pb);
+    let contentW = Math.max(0, rect.width - bl - br - pl - pr);
+    let contentH = Math.max(0, rect.height - bt - bb - pt - pb);
+    if (styles.boxSizing === 'content-box' && styles.width && styles.width !== 'auto' && styles.width.endsWith('px')) {
+      contentW = parseFloat(styles.width);
+    }
+    if (styles.boxSizing === 'content-box' && styles.height && styles.height !== 'auto' && styles.height.endsWith('px')) {
+      contentH = parseFloat(styles.height);
+    }
     const contentCenterX = left + bl + pl + contentW / 2;
     const contentCenterY = top + bt + pt + contentH / 2;
 
@@ -935,80 +970,82 @@ if (!window.cssInspectorInjected) {
       switch (pos) {
         // Margin labels
         case 'margin-top':
-          lbl.textContent = mt > 0 ? `${Math.round(mt)}px` : '0px';
+          lbl.textContent = mt > 0 ? `${formatDimension(mt)}px` : '0px';
           lbl.style.top = `${top - (mt > 0 ? mt / 2 : 0)}px`;
           lbl.style.left = `${left + rect.width / 2}px`;
           break;
         case 'margin-bottom':
-          lbl.textContent = mb > 0 ? `${Math.round(mb)}px` : '0px';
+          lbl.textContent = mb > 0 ? `${formatDimension(mb)}px` : '0px';
           lbl.style.top = `${top + rect.height + (mb > 0 ? mb / 2 : 0)}px`;
           lbl.style.left = `${left + rect.width / 2}px`;
           break;
         case 'margin-left':
-          lbl.textContent = ml > 0 ? `${Math.round(ml)}px` : '0px';
+          lbl.textContent = ml > 0 ? `${formatDimension(ml)}px` : '0px';
           lbl.style.top = `${top + rect.height / 2}px`;
           lbl.style.left = `${left - (ml > 0 ? ml / 2 : 0)}px`;
           break;
         case 'margin-right':
-          lbl.textContent = mr > 0 ? `${Math.round(mr)}px` : '0px';
+          lbl.textContent = mr > 0 ? `${formatDimension(mr)}px` : '0px';
           lbl.style.top = `${top + rect.height / 2}px`;
           lbl.style.left = `${left + rect.width + (mr > 0 ? mr / 2 : 0)}px`;
           break;
         // Border labels
         case 'border-top':
-          lbl.textContent = bt > 0 ? `${Math.round(bt)}px` : '0px';
+          lbl.textContent = bt > 0 ? `${formatDimension(bt)}px` : '0px';
           lbl.style.top = `${top + (bt > 0 ? bt / 2 : 0)}px`;
           lbl.style.left = `${left + rect.width / 2}px`;
           break;
         case 'border-bottom':
-          lbl.textContent = bb > 0 ? `${Math.round(bb)}px` : '0px';
+          lbl.textContent = bb > 0 ? `${formatDimension(bb)}px` : '0px';
           lbl.style.top = `${top + rect.height - (bb > 0 ? bb / 2 : 0)}px`;
           lbl.style.left = `${left + rect.width / 2}px`;
           break;
         case 'border-left':
-          lbl.textContent = bl > 0 ? `${Math.round(bl)}px` : '0px';
+          lbl.textContent = bl > 0 ? `${formatDimension(bl)}px` : '0px';
           lbl.style.top = `${top + rect.height / 2}px`;
           lbl.style.left = `${left + (bl > 0 ? bl / 2 : 0)}px`;
           break;
         case 'border-right':
-          lbl.textContent = br > 0 ? `${Math.round(br)}px` : '0px';
+          lbl.textContent = br > 0 ? `${formatDimension(br)}px` : '0px';
           lbl.style.top = `${top + rect.height / 2}px`;
           lbl.style.left = `${left + rect.width - (br > 0 ? br / 2 : 0)}px`;
           break;
         // Padding labels
         case 'padding-top':
-          lbl.textContent = pt > 0 ? `${Math.round(pt)}px` : '0px';
+          lbl.textContent = pt > 0 ? `${formatDimension(pt)}px` : '0px';
           lbl.style.top = `${top + bt + (pt > 0 ? pt / 2 : 0)}px`;
           lbl.style.left = `${contentCenterX}px`;
           break;
         case 'padding-bottom':
-          lbl.textContent = pb > 0 ? `${Math.round(pb)}px` : '0px';
+          lbl.textContent = pb > 0 ? `${formatDimension(pb)}px` : '0px';
           lbl.style.top = `${top + rect.height - bb - (pb > 0 ? pb / 2 : 0)}px`;
           lbl.style.left = `${contentCenterX}px`;
           break;
         case 'padding-left':
-          lbl.textContent = pl > 0 ? `${Math.round(pl)}px` : '0px';
+          lbl.textContent = pl > 0 ? `${formatDimension(pl)}px` : '0px';
           lbl.style.top = `${contentCenterY}px`;
           lbl.style.left = `${left + bl + (pl > 0 ? pl / 2 : 0)}px`;
           break;
         case 'padding-right':
-          lbl.textContent = pr > 0 ? `${Math.round(pr)}px` : '0px';
+          lbl.textContent = pr > 0 ? `${formatDimension(pr)}px` : '0px';
           lbl.style.top = `${contentCenterY}px`;
           lbl.style.left = `${left + rect.width - br - (pr > 0 ? pr / 2 : 0)}px`;
           break;
         // Content / Width / Height dimensions
         case 'width':
-          lbl.textContent = `W: ${Math.round(rect.width)}px`;
+          const targetW = (styles.width && styles.width !== 'auto' && styles.width.endsWith('px')) ? parseFloat(styles.width) : rect.width;
+          lbl.textContent = `W: ${formatDimension(targetW)}px`;
           lbl.style.top = `${top + rect.height / 2}px`;
           lbl.style.left = `${left + rect.width / 2}px`;
           break;
         case 'height':
-          lbl.textContent = `H: ${Math.round(rect.height)}px`;
+          const targetH = (styles.height && styles.height !== 'auto' && styles.height.endsWith('px')) ? parseFloat(styles.height) : rect.height;
+          lbl.textContent = `H: ${formatDimension(targetH)}px`;
           lbl.style.top = `${top + rect.height / 2}px`;
           lbl.style.left = `${left + rect.width / 2}px`;
           break;
         case 'content-dims':
-          lbl.innerHTML = `<span style="color:#93c5fd;font-weight:700;">W: ${Math.round(contentW)}px</span> <span style="color:#ffffff;opacity:0.8;">×</span> <span style="color:#5eead4;font-weight:700;">H: ${Math.round(contentH)}px</span>`;
+          lbl.innerHTML = `<span style="color:#93c5fd;font-weight:700;">W: ${formatDimension(contentW)}px</span> <span style="color:#ffffff;opacity:0.8;">×</span> <span style="color:#5eead4;font-weight:700;">H: ${formatDimension(contentH)}px</span>`;
           lbl.style.top = `${contentCenterY}px`;
           lbl.style.left = `${contentCenterX}px`;
           break;
@@ -1091,8 +1128,8 @@ if (!window.cssInspectorInjected) {
 
     // Apply resolved positions
     for (const item of labelItems) {
-      item.el.style.left = `${Math.round(item.x)}px`;
-      item.el.style.top = `${Math.round(item.y)}px`;
+      item.el.style.left = `${item.x}px`;
+      item.el.style.top = `${item.y}px`;
     }
   }
 
@@ -1191,7 +1228,7 @@ if (!window.cssInspectorInjected) {
                   top: gTop,
                   width: gapDist,
                   height: Math.max(16, gBottom - gTop),
-                  value: `${Math.round(gapDist)}px`
+                  value: `${formatDimension(gapDist)}px`
                 });
               }
             }
@@ -1215,7 +1252,7 @@ if (!window.cssInspectorInjected) {
                   top: a.bottom,
                   width: Math.max(16, gRight - gLeft),
                   height: gapDist,
-                  value: `${Math.round(gapDist)}px`
+                  value: `${formatDimension(gapDist)}px`
                 });
               }
             }
@@ -1700,7 +1737,7 @@ if (!window.cssInspectorInjected) {
 
       // 1. Top distance
       const topDist = Math.abs(rectB.top - rectA.top);
-      if (Math.round(topDist) > 0) {
+      if (parseFloat(formatDimension(topDist)) > 0) {
         const topY1 = Math.min(rectA.top, rectB.top);
         const topY2 = Math.max(rectA.top, rectB.top);
         drawMeasureLine(measureSvg, innerCenterX, topY1, innerCenterX, topY2, topDist, 'vertical', 'top');
@@ -1708,7 +1745,7 @@ if (!window.cssInspectorInjected) {
 
       // 2. Bottom distance
       const bottomDist = Math.abs(rectA.bottom - rectB.bottom);
-      if (Math.round(bottomDist) > 0) {
+      if (parseFloat(formatDimension(bottomDist)) > 0) {
         const botY1 = Math.min(rectA.bottom, rectB.bottom);
         const botY2 = Math.max(rectA.bottom, rectB.bottom);
         drawMeasureLine(measureSvg, innerCenterX, botY1, innerCenterX, botY2, bottomDist, 'vertical', 'bottom');
@@ -1716,7 +1753,7 @@ if (!window.cssInspectorInjected) {
 
       // 3. Left distance
       const leftDist = Math.abs(rectB.left - rectA.left);
-      if (Math.round(leftDist) > 0) {
+      if (parseFloat(formatDimension(leftDist)) > 0) {
         const leftX1 = Math.min(rectA.left, rectB.left);
         const leftX2 = Math.max(rectA.left, rectB.left);
         drawMeasureLine(measureSvg, leftX1, innerCenterY, leftX2, innerCenterY, leftDist, 'horizontal', 'left');
@@ -1724,7 +1761,7 @@ if (!window.cssInspectorInjected) {
 
       // 4. Right distance
       const rightDist = Math.abs(rectA.right - rectB.right);
-      if (Math.round(rightDist) > 0) {
+      if (parseFloat(formatDimension(rightDist)) > 0) {
         const rightX1 = Math.min(rectA.right, rectB.right);
         const rightX2 = Math.max(rectA.right, rectB.right);
         drawMeasureLine(measureSvg, rightX1, innerCenterY, rightX2, innerCenterY, rightDist, 'horizontal', 'right');
@@ -1732,9 +1769,9 @@ if (!window.cssInspectorInjected) {
     }
 
     // Hovered item's width & height dimension badge
-    const bw = Math.round(rectB.width);
-    const bh = Math.round(rectB.height);
-    if (bw > 0 && bh > 0) {
+    const bw = formatDimension(rectB.width);
+    const bh = formatDimension(rectB.height);
+    if (parseFloat(bw) > 0 && parseFloat(bh) > 0) {
       queueDimensionsBadge(rectB, bw, bh);
     }
 
@@ -1743,32 +1780,6 @@ if (!window.cssInspectorInjected) {
 
     // Draw all non-overlapping badges on SVG
     renderAllBadges(measureSvg, pendingBadges);
-  }
-
-  function queueDimensionsBadge(targetRect, width, height) {
-    const labelText = `${width} × ${height}px`;
-    const paddingX = 8;
-    const textWidth = Math.max(24, labelText.length * 7.5);
-    const rectWidth = Math.max(50, textWidth + paddingX * 2);
-    const rectHeight = 24;
-
-    let initX = targetRect.left + targetRect.width / 2;
-    let initY = targetRect.bottom + rectHeight / 2 + 8;
-
-    // If element is big enough, center inside it
-    if (targetRect.width >= rectWidth + 12 && targetRect.height >= rectHeight + 12) {
-      initX = targetRect.left + targetRect.width / 2;
-      initY = targetRect.top + targetRect.height / 2;
-    }
-
-    pendingBadges.push({
-      text: labelText,
-      width: rectWidth,
-      height: rectHeight,
-      x: initX,
-      y: initY,
-      zone: 'dim'
-    });
   }
 
   function drawMeasureLine(svg, x1, y1, x2, y2, distance, direction, zone) {
@@ -1800,7 +1811,7 @@ if (!window.cssInspectorInjected) {
     }
 
     // Distance label metrics
-    const labelText = `${Math.round(distance)}px`;
+    const labelText = `${formatDimension(distance)}px`;
     const paddingX = 8;
     const textWidth = Math.max(20, labelText.length * 8);
     const rectWidth = Math.max(38, textWidth + paddingX * 2);
@@ -2310,12 +2321,12 @@ if (!window.cssInspectorInjected) {
       }
       // Border width
       if (bwTop === bwRight && bwTop === bwBottom && bwTop === bwLeft) {
-        extraRows += renderInspectorRow('Border Width', bwTop);
+        extraRows += renderInspectorRow('Border Width', formatPx(bwTop));
       } else {
-        if (parseFloat(bwTop) > 0) extraRows += renderInspectorRow('Border Top Width', bwTop);
-        if (parseFloat(bwRight) > 0) extraRows += renderInspectorRow('Border Right Width', bwRight);
-        if (parseFloat(bwBottom) > 0) extraRows += renderInspectorRow('Border Bottom Width', bwBottom);
-        if (parseFloat(bwLeft) > 0) extraRows += renderInspectorRow('Border Left Width', bwLeft);
+        if (parseFloat(bwTop) > 0) extraRows += renderInspectorRow('Border Top Width', formatPx(bwTop));
+        if (parseFloat(bwRight) > 0) extraRows += renderInspectorRow('Border Right Width', formatPx(bwRight));
+        if (parseFloat(bwBottom) > 0) extraRows += renderInspectorRow('Border Bottom Width', formatPx(bwBottom));
+        if (parseFloat(bwLeft) > 0) extraRows += renderInspectorRow('Border Left Width', formatPx(bwLeft));
       }
     }
 
@@ -2352,7 +2363,7 @@ if (!window.cssInspectorInjected) {
 
     if (hasRadius) {
       const rVal = styles.borderRadius || styles.borderTopLeftRadius;
-      radiusHtml = renderInspectorRow('Radius', rVal, 'radius', el);
+      radiusHtml = renderInspectorRow('Radius', formatPx(rVal), 'radius', el);
     }
 
     const rawRowGap = styles.rowGap || styles.gridRowGap || '0px';
@@ -2362,22 +2373,22 @@ if (!window.cssInspectorInjected) {
     let gapHtml = '';
 
     if (rowGap === columnGap && rowGap !== '0px') {
-      gapHtml = renderInspectorRow('Gap', rowGap, 'gap', el);
+      gapHtml = renderInspectorRow('Gap', formatPx(rowGap), 'gap', el);
     } else if (rowGap !== '0px' || columnGap !== '0px') {
-      gapHtml = renderInspectorRow('Gap (Row/Col)', `${rowGap} / ${columnGap}`, 'gap', el);
+      gapHtml = renderInspectorRow('Gap (Row/Col)', `${formatPx(rowGap)} / ${formatPx(columnGap)}`, 'gap', el);
     }
 
     let marginHtml = '';
     const mt = styles.marginTop, mr = styles.marginRight, mb = styles.marginBottom, ml = styles.marginLeft;
     if (mt !== '0px' || mr !== '0px' || mb !== '0px' || ml !== '0px') {
       if (mt === mr && mt === mb && mt === ml) {
-        marginHtml = renderInspectorRow('Margin', mt, 'margin', el);
+        marginHtml = renderInspectorRow('Margin', formatPx(mt), 'margin', el);
       } else {
         let marginContent = '';
-        if (mt !== '0px') marginContent += renderInspectorRow('Margin Top', mt);
-        if (mr !== '0px') marginContent += renderInspectorRow('Margin Right', mr);
-        if (mb !== '0px') marginContent += renderInspectorRow('Margin Bottom', mb);
-        if (ml !== '0px') marginContent += renderInspectorRow('Margin Left', ml);
+        if (mt !== '0px') marginContent += renderInspectorRow('Margin Top', formatPx(mt));
+        if (mr !== '0px') marginContent += renderInspectorRow('Margin Right', formatPx(mr));
+        if (mb !== '0px') marginContent += renderInspectorRow('Margin Bottom', formatPx(mb));
+        if (ml !== '0px') marginContent += renderInspectorRow('Margin Left', formatPx(ml));
         const mCls = findPropertyClass(el, 'margin');
         if (mCls) marginContent += `<div class="css-inspector-row"><span class="css-inspector-label">Margin Class</span><div class="css-inspector-value"><span class="css-inspector-class-text">${mCls}</span></div></div>`;
         marginHtml = marginContent;
@@ -2388,13 +2399,13 @@ if (!window.cssInspectorInjected) {
     const pt = styles.paddingTop, pr = styles.paddingRight, pb = styles.paddingBottom, pl = styles.paddingLeft;
     if (pt !== '0px' || pr !== '0px' || pb !== '0px' || pl !== '0px') {
       if (pt === pr && pt === pb && pt === pl) {
-        paddingHtml = renderInspectorRow('Padding', pt, 'padding', el);
+        paddingHtml = renderInspectorRow('Padding', formatPx(pt), 'padding', el);
       } else {
         let paddingContent = '';
-        if (pt !== '0px') paddingContent += renderInspectorRow('Padding Top', pt);
-        if (pr !== '0px') paddingContent += renderInspectorRow('Padding Right', pr);
-        if (pb !== '0px') paddingContent += renderInspectorRow('Padding Bottom', pb);
-        if (pl !== '0px') paddingContent += renderInspectorRow('Padding Left', pl);
+        if (pt !== '0px') paddingContent += renderInspectorRow('Padding Top', formatPx(pt));
+        if (pr !== '0px') paddingContent += renderInspectorRow('Padding Right', formatPx(pr));
+        if (pb !== '0px') paddingContent += renderInspectorRow('Padding Bottom', formatPx(pb));
+        if (pl !== '0px') paddingContent += renderInspectorRow('Padding Left', formatPx(pl));
         const pCls = findPropertyClass(el, 'padding');
         if (pCls) paddingContent += `<div class="css-inspector-row"><span class="css-inspector-label">Padding Class</span><div class="css-inspector-value"><span class="css-inspector-class-text">${pCls}</span></div></div>`;
         paddingHtml = paddingContent;
@@ -2423,10 +2434,10 @@ if (!window.cssInspectorInjected) {
     <div class="css-inspector-section">
       <div class="css-inspector-section-title">Text properties</div>
       ${renderInspectorRow('Font Family', styles.fontFamily.replace(/['"]/g, ''), 'fontFamily', el)}
-      ${renderInspectorRow('Font Size', styles.fontSize, 'fontSize', el)}
-      ${renderInspectorRow('Line Height', styles.lineHeight, 'lineHeight', el)}
+      ${renderInspectorRow('Font Size', formatPx(styles.fontSize), 'fontSize', el)}
+      ${renderInspectorRow('Line Height', styles.lineHeight === 'normal' ? 'normal' : formatPx(styles.lineHeight), 'lineHeight', el)}
       ${renderInspectorRow('Font Weight', getFontWeightName(styles.fontWeight), 'fontWeight', el)}
-      ${renderInspectorRow('Letter Spacing', styles.letterSpacing === 'normal' ? 'normal' : styles.letterSpacing, 'letterSpacing', el)}
+      ${renderInspectorRow('Letter Spacing', styles.letterSpacing === 'normal' ? 'normal' : formatPx(styles.letterSpacing), 'letterSpacing', el)}
       ${textColorHtml}
       ${renderInspectorRow('Align', makeSelect('textAlign', ['start', 'end', 'left', 'right', 'center', 'justify'], styles.textAlign), 'textAlign', el)}
     </div>`;
@@ -2438,18 +2449,40 @@ if (!window.cssInspectorInjected) {
       const num = parseFloat(val);
       if (!isNaN(num)) {
         if (num === 0) return '-';
-        return Number.isInteger(num) ? num.toString() : num.toFixed(1).replace(/\.0$/, '');
+        return formatDimension(num);
       }
       return val;
     };
+
+    const parseVal = (val) => parseFloat(val) || 0;
+    const bTop = parseVal(styles.borderTopWidth);
+    const bRight = parseVal(styles.borderRightWidth);
+    const bBottom = parseVal(styles.borderBottomWidth);
+    const bLeft = parseVal(styles.borderLeftWidth);
+    const padTop = parseVal(styles.paddingTop);
+    const padRight = parseVal(styles.paddingRight);
+    const padBottom = parseVal(styles.paddingBottom);
+    const padLeft = parseVal(styles.paddingLeft);
+
+    let boxContentW = Math.max(0, rect.width - bLeft - bRight - padLeft - padRight);
+    let boxContentH = Math.max(0, rect.height - bTop - bBottom - padTop - padBottom);
+    if (styles.boxSizing === 'content-box' && styles.width && styles.width !== 'auto' && styles.width.endsWith('px')) {
+      boxContentW = parseFloat(styles.width);
+    }
+    if (styles.boxSizing === 'content-box' && styles.height && styles.height !== 'auto' && styles.height.endsWith('px')) {
+      boxContentH = parseFloat(styles.height);
+    }
+
+    const targetW = (styles.width && styles.width !== 'auto' && styles.width.endsWith('px')) ? styles.width : rect.width;
+    const targetH = (styles.height && styles.height !== 'auto' && styles.height.endsWith('px')) ? styles.height : rect.height;
 
     content.innerHTML = `
     <div class="css-inspector-section">
       <div class="css-inspector-section-title">Layout & Dimensions</div>
       ${renderInspectorRow('Tag', tag)}
       ${renderInspectorRow('Display', styles.display, 'display', el)}
-      ${renderInspectorRow('Width', `${Math.round(rect.width)}px`, 'width', el)}
-      ${renderInspectorRow('Height', `${Math.round(rect.height)}px`, 'height', el)}
+      ${renderInspectorRow('Width', formatPx(targetW), 'width', el)}
+      ${renderInspectorRow('Height', formatPx(targetH), 'height', el)}
       ${radiusHtml}
       ${paddingHtml}
       ${marginHtml}
@@ -2485,7 +2518,7 @@ if (!window.cssInspectorInjected) {
               <span class="css-inspector-box-val css-inspector-box-right" data-side="padding-right">${formatBoxVal(styles.paddingRight)}</span>
 
               <div class="css-inspector-box css-inspector-box-content" data-box="content" data-side="content">
-                <span class="css-inspector-box-dims" data-side="content"><span style="color:#60a5fa;font-weight:600;">W: ${Math.round(rect.width)}</span> × <span style="color:#2dd4bf;font-weight:600;">H: ${Math.round(rect.height)}</span></span>
+                <span class="css-inspector-box-dims" data-side="content"><span style="color:#60a5fa;font-weight:600;">${formatDimension(boxContentW)}</span> × <span style="color:#2dd4bf;font-weight:600;">${formatDimension(boxContentH)}</span></span>
               </div>
             </div>
           </div>
