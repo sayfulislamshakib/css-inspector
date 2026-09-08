@@ -564,14 +564,57 @@ body.css-inspector-mode-active * {
   opacity: 0.8 !important;
 }
 
-.css-inspector-color-box {
+.css-inspector-color-box-wrap {
   width: 16px !important;
   height: 16px !important;
   border-radius: 4px !important;
-  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15) !important;
+  position: relative !important;
+  overflow: hidden !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  background-image: linear-gradient(45deg, #cbd5e1 25%, transparent 25%),
+                    linear-gradient(-45deg, #cbd5e1 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, #cbd5e1 75%),
+                    linear-gradient(-45deg, transparent 75%, #cbd5e1 75%) !important;
+  background-size: 6px 6px !important;
+  background-position: 0 0, 0 3px, 3px -3px, -3px 0 !important;
+  background-color: #ffffff !important;
+  cursor: pointer !important;
+}
+
+.css-inspector-color-box {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: inherit !important;
   margin: 0 !important;
   flex-shrink: 0 !important;
   cursor: pointer !important;
+}
+
+.css-inspector-color-opacity {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  padding: 2px 5px !important;
+  border-radius: 4px !important;
+  background-color: #ede9fe !important;
+  color: #6d28d9 !important;
+  border: 1px solid rgba(139, 92, 246, 0.25) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  user-select: none !important;
+  letter-spacing: 0.2px !important;
+  flex-shrink: 0 !important;
+}
+
+.css-inspector-color-opacity:hover {
+  background-color: #ddd6fe !important;
+  color: #5b21b6 !important;
+  border-color: rgba(139, 92, 246, 0.4) !important;
 }
 
 /* Box Model Visualization */

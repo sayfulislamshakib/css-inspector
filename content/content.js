@@ -476,7 +476,17 @@ if (!window.cssInspectorInjected) {
         }
       }
 
-      // 2. If clicked color box or color wrap
+      // 2. If clicked color opacity badge
+      const opacityBadge = e.target.closest('.css-inspector-color-opacity');
+      if (opacityBadge) {
+        const text = opacityBadge.textContent.trim();
+        if (text) {
+          navigator.clipboard.writeText(text).then(() => showToast(`Copied ${text}`));
+          return;
+        }
+      }
+
+      // 3. If clicked color box or color wrap
       const colorWrap = e.target.closest('.css-inspector-color-wrap');
       if (colorWrap) {
         const hexEl = colorWrap.querySelector('.css-inspector-value-text');
@@ -2029,11 +2039,163 @@ if (!window.cssInspectorInjected) {
     svg.appendChild(line);
   }
 
+  let colorCanvasCtx = null;
+  function getColorCanvasCtx() {
+    if (!colorCanvasCtx) {
+      try {
+        const c = document.createElement('canvas');
+        c.width = 1;
+        c.height = 1;
+        colorCanvasCtx = c.getContext('2d', { willReadFrequently: true });
+      } catch (e) { }
+    }
+    return colorCanvasCtx;
+  }
+
+  function parseColor(colorStr) {
+    if (!colorStr || colorStr === 'transparent' || colorStr === 'none') {
+      return null;
+    }
+
+    const hexPart = (x) => ("0" + Math.max(0, Math.min(255, Math.round(Number(x)))).toString(16)).slice(-2).toUpperCase();
+
+    let r = 0, g = 0, b = 0, a = 1;
+    let parsed = false;
+
+    // Fast path: standard rgba/rgb strings
+    const rgbaMatch = colorStr.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+%?))?\s*\)$/i);
+    if (rgbaMatch) {
+      r = parseInt(rgbaMatch[1], 10);
+      g = parseInt(rgbaMatch[2], 10);
+      b = parseInt(rgbaMatch[3], 10);
+      if (rgbaMatch[4] !== undefined) {
+        a = rgbaMatch[4].endsWith('%') ? parseFloat(rgbaMatch[4]) / 100 : parseFloat(rgbaMatch[4]);
+      }
+      parsed = true;
+    }
+
+    // Slash syntax: rgb(r g b / a)
+    if (!parsed) {
+      const slashMatch = colorStr.match(/^rgba?\(\s*(\d+)\s+(\d+)\s+(\d+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/i);
+      if (slashMatch) {
+        r = parseInt(slashMatch[1], 10);
+        g = parseInt(slashMatch[2], 10);
+        b = parseInt(slashMatch[3], 10);
+        if (slashMatch[4] !== undefined) {
+          a = slashMatch[4].endsWith('%') ? parseFloat(slashMatch[4]) / 100 : parseFloat(slashMatch[4]);
+        }
+        parsed = true;
+      }
+    }
+
+    // Hex syntax: #RGB, #RGBA, #RRGGBB, #RRGGBBAA
+    if (!parsed && colorStr.startsWith('#')) {
+      const hex = colorStr.slice(1);
+      if (hex.length === 3) {
+        r = parseInt(hex[0] + hex[0], 16);
+        g = parseInt(hex[1] + hex[1], 16);
+        b = parseInt(hex[2] + hex[2], 16);
+        parsed = true;
+      } else if (hex.length === 4) {
+        r = parseInt(hex[0] + hex[0], 16);
+        g = parseInt(hex[1] + hex[1], 16);
+        b = parseInt(hex[2] + hex[2], 16);
+        a = parseInt(hex[3] + hex[3], 16) / 255;
+        parsed = true;
+      } else if (hex.length === 6) {
+        r = parseInt(hex.slice(0, 2), 16);
+        g = parseInt(hex.slice(2, 4), 16);
+        b = parseInt(hex.slice(4, 6), 16);
+        parsed = true;
+      } else if (hex.length === 8) {
+        r = parseInt(hex.slice(0, 2), 16);
+        g = parseInt(hex.slice(2, 4), 16);
+        b = parseInt(hex.slice(4, 6), 16);
+        a = parseInt(hex.slice(6, 8), 16) / 255;
+        parsed = true;
+      }
+    }
+
+    // Canvas fallback for modern formats: color(), oklch, lab, hsl, hsla, named colors
+    if (!parsed) {
+      try {
+        const ctx = getColorCanvasCtx();
+        if (ctx) {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = '#000000';
+          ctx.fillStyle = colorStr;
+          const normalized = ctx.fillStyle;
+          if (normalized.startsWith('#')) {
+            r = parseInt(normalized.slice(1, 3), 16);
+            g = parseInt(normalized.slice(3, 5), 16);
+            b = parseInt(normalized.slice(5, 7), 16);
+            a = 1;
+            parsed = true;
+          } else {
+            const m = normalized.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
+            if (m) {
+              r = parseInt(m[1], 10);
+              g = parseInt(m[2], 10);
+              b = parseInt(m[3], 10);
+              a = m[4] !== undefined ? parseFloat(m[4]) : 1;
+              parsed = true;
+            }
+          }
+        }
+      } catch (e) { }
+    }
+
+    if (!parsed) {
+      return null;
+    }
+
+    a = isNaN(a) ? 1 : Math.max(0, Math.min(1, a));
+    const hex = `#${hexPart(r)}${hexPart(g)}${hexPart(b)}`;
+    const alphaHex = hexPart(Math.round(a * 255));
+    const hex8 = `${hex}${alphaHex}`;
+    const opacityPercent = Math.round(a * 100);
+    const hasOpacity = a < 0.999;
+    const displayCss = hasOpacity ? `rgba(${r}, ${g}, ${b}, ${a})` : hex;
+
+    return {
+      raw: colorStr,
+      hex,
+      hex8,
+      r,
+      g,
+      b,
+      a,
+      hasOpacity,
+      opacityPercent,
+      displayCss
+    };
+  }
+
   function rgbToHex(rgbStr) {
-    const rgb = rgbStr.match(/\d+/g);
+    const parsed = parseColor(rgbStr);
+    if (parsed) return parsed.hex;
+    const rgb = rgbStr ? rgbStr.match(/\d+/g) : null;
     if (!rgb || rgb.length < 3) return rgbStr;
     const hex = (x) => ("0" + parseInt(x).toString(16)).slice(-2);
     return `#${hex(rgb[0])}${hex(rgb[1])}${hex(rgb[2])}`.toUpperCase();
+  }
+
+  function renderColorValueHtml(parsedColor, classText = '') {
+    if (!parsedColor) return '';
+    const opacityBadge = parsedColor.hasOpacity
+      ? `<span class="css-inspector-color-opacity" title="Opacity: ${parsedColor.opacityPercent}%">${parsedColor.opacityPercent}%</span>`
+      : '';
+
+    return `
+      <div class="css-inspector-color-wrap" data-color="${parsedColor.hex}" data-rgba="${parsedColor.displayCss}" data-opacity="${parsedColor.opacityPercent}">
+        <div class="css-inspector-color-box-wrap" title="${parsedColor.displayCss}">
+          <div class="css-inspector-color-box" style="background-color: ${parsedColor.displayCss}"></div>
+        </div>
+        <span class="css-inspector-value-text">${parsedColor.hex}</span>
+        ${opacityBadge}
+      </div>
+      ${classText ? `<span class="css-inspector-class-text">${classText}</span>` : ''}
+    `;
   }
 
   function getFontWeightName(weight) {
@@ -2227,8 +2389,9 @@ if (!window.cssInspectorInjected) {
     const colorsToShow = [];
     const addColor = (label, colorValue) => {
       if (!colorValue || colorValue === 'rgba(0, 0, 0, 0)' || colorValue === 'transparent' || colorValue === 'none') return;
-      const hex = rgbToHex(colorValue);
-      colorsToShow.push({ label, hex });
+      const parsed = parseColor(colorValue);
+      if (!parsed) return;
+      colorsToShow.push({ label, parsed });
     };
 
     let hasText = false;
@@ -2263,21 +2426,24 @@ if (!window.cssInspectorInjected) {
       addColor('Stroke', styles.stroke);
     }
 
+    if (hasText && styles.color && styles.color !== 'rgba(0, 0, 0, 0)' && styles.color !== 'transparent') {
+      addColor('Text', styles.color);
+    }
+
     let colorsSectionHtml = '';
     if (colorsToShow.length > 0) {
       let colorsHtml = colorsToShow.map(c => {
-        const isBg = c.label.toLowerCase().includes('background');
-        const colorClass = isBg ? findPropertyClass(el, 'backgroundColor') : '';
+        let colorCategory = null;
+        const l = c.label.toLowerCase();
+        if (l.includes('background')) colorCategory = 'backgroundColor';
+        else if (l.includes('text')) colorCategory = 'color';
+        const colorClass = colorCategory ? findPropertyClass(el, colorCategory) : '';
 
         return `
         <div class="css-inspector-row">
           <span class="css-inspector-label">${c.label}</span>
           <div class="css-inspector-value">
-            <div class="css-inspector-color-wrap">
-              <div class="css-inspector-color-box" style="background-color: ${c.hex}"></div>
-              <span class="css-inspector-value-text">${c.hex}</span>
-            </div>
-            ${colorClass ? `<span class="css-inspector-class-text">${colorClass}</span>` : ''}
+            ${renderColorValueHtml(c.parsed, colorClass)}
           </div>
         </div>
       `;
@@ -2302,7 +2468,12 @@ if (!window.cssInspectorInjected) {
     let extraPropsHtml = '';
     let extraRows = '';
 
-    if (styles.opacity && styles.opacity !== '1') extraRows += renderInspectorRow('Opacity', styles.opacity, 'opacity', el);
+    if (styles.opacity && styles.opacity !== '1') {
+      const opFloat = parseFloat(styles.opacity);
+      const opPct = isNaN(opFloat) ? styles.opacity : `${Math.round(opFloat * 100)}%`;
+      const opDisplay = isNaN(opFloat) ? styles.opacity : `${opPct} (${styles.opacity})`;
+      extraRows += renderInspectorRow('Opacity', opDisplay, 'opacity', el);
+    }
     if (styles.boxShadow && styles.boxShadow !== 'none') extraRows += renderInspectorRow('Shadow', styles.boxShadow, 'shadow', el);
 
     // Border style & width
@@ -2414,18 +2585,14 @@ if (!window.cssInspectorInjected) {
 
     let typographyHtml = '';
     if (hasText) {
-      const textColorHex = rgbToHex(styles.color);
+      const parsedTextColor = parseColor(styles.color);
       const textColorClass = findPropertyClass(el, 'color');
 
-      const textColorHtml = (styles.color && styles.color !== 'rgba(0, 0, 0, 0)' && styles.color !== 'transparent') ? `
+      const textColorHtml = (parsedTextColor && styles.color !== 'rgba(0, 0, 0, 0)' && styles.color !== 'transparent') ? `
       <div class="css-inspector-row">
         <span class="css-inspector-label">Text color</span>
         <div class="css-inspector-value">
-          <div class="css-inspector-color-wrap">
-            <div class="css-inspector-color-box" style="background-color: ${textColorHex}"></div>
-            <span class="css-inspector-value-text">${textColorHex}</span>
-          </div>
-          ${textColorClass ? `<span class="css-inspector-class-text">${textColorClass}</span>` : ''}
+          ${renderColorValueHtml(parsedTextColor, textColorClass)}
         </div>
       </div>
     ` : '';
