@@ -23,6 +23,7 @@ if (!window.cssInspectorInjected) {
   const selectedHighlightRegions = new Set();
   let selectedOverlayContainer = null;
   let gapHighlightsContainer = null;
+  let leaderSvg = null;
 
   // Gap measurement state
   let measureTarget = null;
@@ -32,6 +33,7 @@ if (!window.cssInspectorInjected) {
   let isMeasuring = false;
   let isMeasureLocked = false;
   let isMeasurementEnabled = false;
+  let pendingBadges = [];
 
   let lastMouseX = 0;
   let lastMouseY = 0;
@@ -41,10 +43,10 @@ if (!window.cssInspectorInjected) {
 
   function isOurUI(el) {
     if (!el) return true;
-    if (el === overlay || el === clickedOverlay) return true;
+    if (el === overlay || el === clickedOverlay || el === leaderSvg) return true;
     if (el.id && el.id.startsWith('css-inspector-')) return true;
     if (el.className && typeof el.className === 'string' && el.className.includes('css-inspector-')) return true;
-    if (el.closest && (el.closest('#css-inspector-panel') || el.closest('#css-inspector-overlay-container') || el.closest('#css-inspector-toast'))) return true;
+    if (el.closest && (el.closest('#css-inspector-panel') || el.closest('#css-inspector-overlay-container') || el.closest('#css-inspector-toast') || el.closest('#css-inspector-leader-svg'))) return true;
     return false;
   }
 
@@ -202,12 +204,13 @@ if (!window.cssInspectorInjected) {
     }
 
     // Custom keyboard shortcuts
-    let customShortcuts = {
+    const defaultShortcuts = {
       toggleInspector: { ctrlKey: true, shiftKey: true, altKey: false, key: 'E' },
       togglePause: { ctrlKey: false, shiftKey: false, altKey: true, key: 'P' },
       toggleBlockInteractions: { ctrlKey: false, shiftKey: false, altKey: true, key: 'B' },
       toggleMeasurement: { ctrlKey: false, shiftKey: false, altKey: true, key: 'M' }
     };
+    let customShortcuts = Object.assign({}, defaultShortcuts);
 
     try {
       chrome.storage.local.get({ blockInteractions: true, pauseOnPopup: true, customShortcuts: null }, (result) => {
@@ -239,7 +242,7 @@ if (!window.cssInspectorInjected) {
             }
           }
           if (changes.customShortcuts !== undefined) {
-            customShortcuts = changes.customShortcuts.newValue;
+            customShortcuts = Object.assign({}, defaultShortcuts, changes.customShortcuts.newValue || {});
           }
         }
       });
@@ -290,6 +293,11 @@ if (!window.cssInspectorInjected) {
     <rect width="100%" height="100%" fill="url(#css-inspector-gap-pattern)" mask="url(#css-inspector-gap-mask)" />
   `;
     overlay.appendChild(overlayGaps);
+
+    // Create leader line pin SVG
+    leaderSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    leaderSvg.id = 'css-inspector-leader-svg';
+    overlay.appendChild(leaderSvg);
 
     // Create overlay value labels container
     const overlayLabels = document.createElement('div');
@@ -350,20 +358,7 @@ if (!window.cssInspectorInjected) {
     document.body.appendChild(panel);
 
     document.getElementById('css-inspector-close').addEventListener('click', () => {
-      panel.classList.remove('active');
-      overlay.classList.remove('active');
-      if (overlayHighlight) overlayHighlight.classList.remove('active');
-      if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
-      if (gapHighlightsContainer) gapHighlightsContainer.innerHTML = '';
-      overlayGaps.classList.remove('active');
-      hideOverlayLabels();
-      clickedOverlay.classList.remove('active');
-      clickedTarget = null;
-      currentHighlightedRegion = null;
-      selectedHighlightRegions.clear();
-      clearSelectedHighlightUI();
-      clearMeasurement();
-      stopOverlayAnimationTracking();
+      closePanel();
     });
 
     const contentEl = document.getElementById('css-inspector-content');
@@ -664,12 +659,7 @@ if (!window.cssInspectorInjected) {
       if (matchesShortcut(customShortcuts.toggleInspector)) {
         e.preventDefault();
         e.stopPropagation();
-        toggleInspector(!isActive);
-        try {
-          if (!isActive) {
-            chrome.runtime.sendMessage({ action: 'badgeOff' });
-          }
-        } catch (err) { }
+        requestGlobalToggle(!isActive);
         return;
       }
 
@@ -735,23 +725,10 @@ if (!window.cssInspectorInjected) {
           clearMeasurement();
         } else if (clickedTarget) {
           // Close popup and deselect element
-          panel.classList.remove('active');
-          clickedOverlay.classList.remove('active');
-          overlay.classList.remove('active');
-          if (overlayHighlight) overlayHighlight.classList.remove('active');
-          if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
-          if (gapHighlightsContainer) gapHighlightsContainer.innerHTML = '';
-          overlayGaps.classList.remove('active');
-          hideOverlayLabels();
-          clickedTarget = null;
-          currentHighlightedRegion = null;
-          selectedHighlightRegions.clear();
+          closePanel();
         } else {
-          // No popup open — turn off the inspector entirely
-          toggleInspector(false);
-          try {
-            chrome.runtime.sendMessage({ action: 'badgeOff' });
-          } catch (err) { }
+          // No popup open — turn off the inspector entirely (in all frames)
+          requestGlobalToggle(false);
         }
       }
     }, true);
@@ -766,23 +743,56 @@ if (!window.cssInspectorInjected) {
     }, true);
   }
 
+  // Close the info panel and clear every selection/highlight artifact
+  function closePanel() {
+    if (panel) panel.classList.remove('active');
+    if (overlay) overlay.classList.remove('active');
+    if (clickedOverlay) clickedOverlay.classList.remove('active');
+    if (overlayHighlight) overlayHighlight.classList.remove('active');
+    if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
+    if (gapHighlightsContainer) gapHighlightsContainer.innerHTML = '';
+    if (overlayGaps) overlayGaps.classList.remove('active');
+    if (leaderSvg) leaderSvg.innerHTML = '';
+    clickedTarget = null;
+    currentAnimTarget = null;
+    currentHighlightedRegion = null;
+    selectedHighlightRegions.clear();
+    if (overlay) hideOverlayLabels();
+    const contentEl = document.getElementById('css-inspector-content');
+    if (contentEl) {
+      contentEl.querySelectorAll('.css-inspector-region-selected').forEach(el => {
+        el.classList.remove('css-inspector-region-selected');
+      });
+    }
+    clearMeasurement();
+    stopOverlayAnimationTracking();
+    // Ensure the hover overlay is redrawn on the next mouse move, even over the same element
+    forceUpdateOverlay = true;
+  }
+
+  // Ask the background to apply a state to every frame in the tab (keeps frames + badge in sync).
+  // Falls back to a local toggle if the extension context is unavailable.
+  function requestGlobalToggle(state) {
+    try {
+      chrome.runtime.sendMessage({ action: 'requestToggle', isActive: state }, (response) => {
+        if (chrome.runtime.lastError || !response || !response.ok) {
+          toggleInspector(state);
+        }
+      });
+    } catch (err) {
+      toggleInspector(state);
+    }
+  }
+
   // Toggle Inspector
   function toggleInspector(state) {
+    if (state === isActive) return;
     isActive = state;
     if (!isActive) {
       isMeasurementEnabled = false;
-      overlay.classList.remove('active');
-      if (overlayHighlight) overlayHighlight.classList.remove('active');
-      if (selectedOverlayContainer) selectedOverlayContainer.innerHTML = '';
-      if (gapHighlightsContainer) gapHighlightsContainer.innerHTML = '';
-      clickedOverlay.classList.remove('active');
-      panel.classList.remove('active');
+      closePanel();
       currentTarget = null;
-      clickedTarget = null;
-      currentHighlightedRegion = null;
-      selectedHighlightRegions.clear();
-      clearMeasurement();
-      stopOverlayAnimationTracking();
+      isFrameHovered = false;
       document.body.classList.remove('css-inspector-mode-active');
       showToast("Inspector: OFF");
     } else {
@@ -867,11 +877,22 @@ if (!window.cssInspectorInjected) {
 
     // If an element is clicked/selected:
     if (clickedTarget) {
+      // When "Pause on Popup" is ON the box-model overlay stays on the selected element;
+      // when OFF it keeps following the cursor.
+      const refreshOverlay = () => {
+        if (pauseOnPopup) {
+          updateOverlay(clickedTarget);
+        } else {
+          currentTarget = target;
+          updateOverlay(target);
+        }
+      };
+
       if (isMeasureLocked) {
         if (measureTarget) {
           renderMeasurement(clickedTarget, measureTarget);
         }
-        updateOverlay(clickedTarget);
+        refreshOverlay();
         return;
       }
 
@@ -888,7 +909,7 @@ if (!window.cssInspectorInjected) {
         clearMeasurement();
       }
 
-      updateOverlay(clickedTarget);
+      refreshOverlay();
       return;
     }
 
@@ -1025,165 +1046,602 @@ if (!window.cssInspectorInjected) {
     const contentCenterX = left + bl + pl + contentW / 2;
     const contentCenterY = top + bt + pt + contentH / 2;
 
+    // Anchor & initial placement logic for pin leader line system
+    const isThinElement = rect.height < 60;
+    const isNarrowElement = rect.width < 120;
+    const isWidthActive = selectedHighlightRegions.has('width') || currentHighlightedRegion === 'width';
+    const isPaddingTopActive = (selectedHighlightRegions.has('padding') || selectedHighlightRegions.has('padding-all') || selectedHighlightRegions.has('padding-top') || currentHighlightedRegion === 'padding' || currentHighlightedRegion === 'padding-all' || currentHighlightedRegion === 'padding-top') && pt > 0;
+    const isPaddingBottomActive = (selectedHighlightRegions.has('padding') || selectedHighlightRegions.has('padding-all') || selectedHighlightRegions.has('padding-bottom') || currentHighlightedRegion === 'padding' || currentHighlightedRegion === 'padding-all' || currentHighlightedRegion === 'padding-bottom') && pb > 0;
+
+    // Cache target geometry for smart single/dual line positioning
+    overlay._inspectorContext = {
+      contentCenterX,
+      contentCenterY,
+      top,
+      left,
+      width: rect.width,
+      height: rect.height,
+      pt, pb, pl, pr,
+      bt, bb, bl, br,
+      mt, mb, ml, mr
+    };
+
     labels.forEach(lbl => {
       const pos = lbl.dataset.pos;
       switch (pos) {
         // Margin labels
-        case 'margin-top':
+        case 'margin-top': {
           lbl.textContent = mt > 0 ? `${formatDimension(mt)}px` : '0px';
-          lbl.style.top = `${top - (mt > 0 ? mt / 2 : 0)}px`;
-          lbl.style.left = `${left + rect.width / 2}px`;
+          const anchorX = contentCenterX;
+          const anchorY = top;
+          const mTop = (top >= 36) ? (top - 28) : (top + rect.height + 28);
+          lbl.style.left = `${contentCenterX}px`;
+          lbl.style.top = `${mTop}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#f97316';
           break;
-        case 'margin-bottom':
+        }
+        case 'margin-bottom': {
           lbl.textContent = mb > 0 ? `${formatDimension(mb)}px` : '0px';
-          lbl.style.top = `${top + rect.height + (mb > 0 ? mb / 2 : 0)}px`;
-          lbl.style.left = `${left + rect.width / 2}px`;
+          const anchorX = contentCenterX;
+          const anchorY = top + rect.height;
+          const mBottom = top + rect.height + 28;
+          lbl.style.left = `${contentCenterX}px`;
+          lbl.style.top = `${mBottom}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#f97316';
           break;
-        case 'margin-left':
+        }
+        case 'margin-left': {
           lbl.textContent = ml > 0 ? `${formatDimension(ml)}px` : '0px';
-          lbl.style.top = `${top + rect.height / 2}px`;
-          lbl.style.left = `${left - (ml > 0 ? ml / 2 : 0)}px`;
+          const anchorX = left;
+          const anchorY = contentCenterY;
+          const mLeft = (left >= 60) ? (left - 50) : (left + rect.width + 50);
+          lbl.style.left = `${mLeft}px`;
+          lbl.style.top = `${contentCenterY}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#f97316';
           break;
-        case 'margin-right':
+        }
+        case 'margin-right': {
           lbl.textContent = mr > 0 ? `${formatDimension(mr)}px` : '0px';
-          lbl.style.top = `${top + rect.height / 2}px`;
-          lbl.style.left = `${left + rect.width + (mr > 0 ? mr / 2 : 0)}px`;
+          const anchorX = left + rect.width;
+          const anchorY = contentCenterY;
+          const mRight = left + rect.width + 50;
+          lbl.style.left = `${mRight}px`;
+          lbl.style.top = `${contentCenterY}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#f97316';
           break;
+        }
+
         // Border labels
-        case 'border-top':
+        case 'border-top': {
           lbl.textContent = bt > 0 ? `${formatDimension(bt)}px` : '0px';
-          lbl.style.top = `${top + (bt > 0 ? bt / 2 : 0)}px`;
-          lbl.style.left = `${left + rect.width / 2}px`;
+          const anchorX = contentCenterX;
+          const anchorY = top + (bt > 0 ? bt / 2 : 0);
+          lbl.style.left = `${contentCenterX}px`;
+          lbl.style.top = `${(top >= 36) ? (top - 28) : (top + rect.height + 28)}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#ca8a04';
           break;
-        case 'border-bottom':
+        }
+        case 'border-bottom': {
           lbl.textContent = bb > 0 ? `${formatDimension(bb)}px` : '0px';
-          lbl.style.top = `${top + rect.height - (bb > 0 ? bb / 2 : 0)}px`;
-          lbl.style.left = `${left + rect.width / 2}px`;
+          const anchorX = contentCenterX;
+          const anchorY = top + rect.height - (bb > 0 ? bb / 2 : 0);
+          lbl.style.left = `${contentCenterX}px`;
+          lbl.style.top = `${top + rect.height + 28}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#ca8a04';
           break;
-        case 'border-left':
+        }
+        case 'border-left': {
           lbl.textContent = bl > 0 ? `${formatDimension(bl)}px` : '0px';
-          lbl.style.top = `${top + rect.height / 2}px`;
-          lbl.style.left = `${left + (bl > 0 ? bl / 2 : 0)}px`;
+          const anchorX = left + (bl > 0 ? bl / 2 : 0);
+          const anchorY = contentCenterY;
+          lbl.style.left = `${(left >= 50) ? (left - 24) : (left + rect.width + 24)}px`;
+          lbl.style.top = `${anchorY}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#ca8a04';
           break;
-        case 'border-right':
+        }
+        case 'border-right': {
           lbl.textContent = br > 0 ? `${formatDimension(br)}px` : '0px';
-          lbl.style.top = `${top + rect.height / 2}px`;
-          lbl.style.left = `${left + rect.width - (br > 0 ? br / 2 : 0)}px`;
+          const anchorX = left + rect.width - (br > 0 ? br / 2 : 0);
+          const anchorY = contentCenterY;
+          lbl.style.left = `${left + rect.width + 24}px`;
+          lbl.style.top = `${anchorY}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#ca8a04';
           break;
+        }
+
         // Padding labels
-        case 'padding-top':
+        case 'padding-top': {
           lbl.textContent = pt > 0 ? `${formatDimension(pt)}px` : '0px';
-          lbl.style.top = `${top + bt + (pt > 0 ? pt / 2 : 0)}px`;
+          const anchorX = contentCenterX;
+          const anchorY = top + bt + Math.max(pt / 2, 2);
+          const pTop = (top >= 36) ? (top - 28) : (top + rect.height + 28);
           lbl.style.left = `${contentCenterX}px`;
+          lbl.style.top = `${pTop}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#10b981';
           break;
-        case 'padding-bottom':
+        }
+        case 'padding-bottom': {
           lbl.textContent = pb > 0 ? `${formatDimension(pb)}px` : '0px';
-          lbl.style.top = `${top + rect.height - bb - (pb > 0 ? pb / 2 : 0)}px`;
+          const anchorX = contentCenterX;
+          const anchorY = top + rect.height - bb - Math.max(pb / 2, 2);
+          const pBottom = top + rect.height + 28;
           lbl.style.left = `${contentCenterX}px`;
+          lbl.style.top = `${pBottom}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#10b981';
           break;
-        case 'padding-left':
+        }
+        case 'padding-left': {
           lbl.textContent = pl > 0 ? `${formatDimension(pl)}px` : '0px';
-          lbl.style.top = `${contentCenterY}px`;
-          lbl.style.left = `${left + bl + (pl > 0 ? pl / 2 : 0)}px`;
+          const anchorX = left + bl + Math.max(pl / 2, 2);
+          const anchorY = contentCenterY;
+          const pLeft = (contentW < 60 || pl < 24) ? (left - 50) : (left + bl + pl / 2);
+          const pTop = (contentW < 60 || pl < 24) ? (contentCenterY - 26) : contentCenterY;
+          lbl.style.left = `${pLeft}px`;
+          lbl.style.top = `${pTop}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#10b981';
           break;
-        case 'padding-right':
+        }
+        case 'padding-right': {
           lbl.textContent = pr > 0 ? `${formatDimension(pr)}px` : '0px';
-          lbl.style.top = `${contentCenterY}px`;
-          lbl.style.left = `${left + rect.width - br - (pr > 0 ? pr / 2 : 0)}px`;
+          const anchorX = left + rect.width - br - Math.max(pr / 2, 2);
+          const anchorY = contentCenterY;
+          const pRight = (contentW < 60 || pr < 24) ? (left + rect.width + 50) : (left + rect.width - br - pr / 2);
+          const pTop = (contentW < 60 || pr < 24) ? (contentCenterY - 26) : contentCenterY;
+          lbl.style.left = `${pRight}px`;
+          lbl.style.top = `${pTop}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#10b981';
           break;
-        // Content / Width / Height dimensions
-        case 'width':
-          const targetW = (styles.width && styles.width !== 'auto' && styles.width.endsWith('px')) ? parseFloat(styles.width) : rect.width;
+        }
+
+        // Width / Height / Content dimensions
+        case 'width': {
+          const targetW = (styles.boxSizing === 'content-box' && styles.width && styles.width !== 'auto' && styles.width.endsWith('px')) ? parseFloat(styles.width) : rect.width;
           lbl.textContent = `W: ${formatDimension(targetW)}px`;
-          lbl.style.top = `${top + rect.height / 2}px`;
-          lbl.style.left = `${left + rect.width / 2}px`;
-          break;
-        case 'height':
-          const targetH = (styles.height && styles.height !== 'auto' && styles.height.endsWith('px')) ? parseFloat(styles.height) : rect.height;
-          lbl.textContent = `H: ${formatDimension(targetH)}px`;
-          lbl.style.top = `${top + rect.height / 2}px`;
-          lbl.style.left = `${left + rect.width / 2}px`;
-          break;
-        case 'content-dims':
-          lbl.innerHTML = `<span style="color:#93c5fd;font-weight:700;">W: ${formatDimension(contentW)}px</span> <span style="color:#ffffff;opacity:0.8;">×</span> <span style="color:#5eead4;font-weight:700;">H: ${formatDimension(contentH)}px</span>`;
-          lbl.style.top = `${contentCenterY}px`;
+          const anchorX = contentCenterX;
+          const anchorY = (top >= 36) ? top : (top + rect.height);
+          const wTop = (top >= 36) ? (top - 28) : (top + rect.height + 28);
           lbl.style.left = `${contentCenterX}px`;
+          lbl.style.top = `${wTop}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#2563eb';
           break;
+        }
+        case 'height': {
+          const targetH = (styles.boxSizing === 'content-box' && styles.height && styles.height !== 'auto' && styles.height.endsWith('px')) ? parseFloat(styles.height) : rect.height;
+          lbl.textContent = `H: ${formatDimension(targetH)}px`;
+          const anchorX = (left >= 60) ? left : (left + rect.width);
+          const anchorY = contentCenterY;
+          const hLeft = (left >= 60) ? (left - 50) : (left + rect.width + 50);
+          lbl.style.left = `${hLeft}px`;
+          lbl.style.top = `${anchorY}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#0d9488';
+          break;
+        }
+        case 'content-dims': {
+          lbl.innerHTML = `<span style="color:#93c5fd;font-weight:700;">W: ${formatDimension(contentW)}px</span> <span style="color:#ffffff;opacity:0.8;">×</span> <span style="color:#5eead4;font-weight:700;">H: ${formatDimension(contentH)}px</span>`;
+          const anchorX = contentCenterX;
+          const anchorY = contentCenterY;
+          const cdTop = contentH < 32 ? ((top >= 65) ? (top - 58) : (top + rect.height + 58)) : contentCenterY;
+          lbl.style.top = `${cdTop}px`;
+          lbl.style.left = `${contentCenterX}px`;
+          lbl.dataset.anchorX = anchorX;
+          lbl.dataset.anchorY = anchorY;
+          lbl.dataset.color = '#6366f1';
+          break;
+        }
       }
     });
 
     overlay.classList.add('active');
     renderGapHighlights(target);
-    if (selectedHighlightRegions.size > 0) {
-      showOverlayLabels(Array.from(selectedHighlightRegions));
+    const activeLabelTypes = Array.from(selectedHighlightRegions);
+    if (currentHighlightedRegion && !activeLabelTypes.includes(currentHighlightedRegion)) {
+      activeLabelTypes.push(currentHighlightedRegion);
+    }
+    if (activeLabelTypes.length > 0) {
+      showOverlayLabels(activeLabelTypes);
     } else {
-      resolveVisibleOverlayLabelOverlaps();
+      hideOverlayLabels();
     }
   }
 
+  function getLabelColor(pos) {
+    if (!pos) return '#2563eb';
+    if (pos.startsWith('margin')) return '#f97316';
+    if (pos.startsWith('border')) return '#ca8a04';
+    if (pos.startsWith('padding')) return '#10b981';
+    if (pos === 'width') return '#2563eb';
+    if (pos === 'height') return '#0d9488';
+    if (pos === 'content-dims') return '#6366f1';
+    if (pos === 'gap' || pos.startsWith('gap')) return '#8b5cf6';
+    return '#2563eb';
+  }
+
+  // Generates SVG path for the leader line connecting anchor directly into center of number
+  function createCalloutPath(ax, ay, bx, by, hw, hh, isSide) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+
+    if (Math.hypot(dx, dy) < 14) return null;
+
+    const dirX = dx >= 0 ? 1 : -1;
+    const dirY = dy >= 0 ? 1 : -1;
+
+    // For top/bottom callouts: line ALWAYS meets the badge at horizontal center (bx)
+    if (!isSide || absY >= absX) {
+      const edgeY = dirY === 1 ? (by - hh) : (by + hh);
+
+      // When anchor and badge share the same X: straight vertical line into center of number
+      if (absX < 4) {
+        return {
+          path: `M ${bx} ${ay} L ${bx} ${edgeY}`
+        };
+      }
+
+      // If anchor and badge have different X:
+      // Vertical stem from ax -> smooth curve to midY -> horizontal bridge -> smooth curve -> straight vertical drop into (bx, edgeY)
+      const midY = (ay + edgeY) / 2;
+      const spanY = Math.abs(edgeY - ay);
+      const r = Math.min(10, absX * 0.35, spanY * 0.35);
+
+      if (r < 2) {
+        return {
+          path: `M ${ax} ${ay} L ${ax} ${midY} L ${bx} ${midY} L ${bx} ${edgeY}`
+        };
+      }
+
+      return {
+        path: `M ${ax} ${ay} L ${ax} ${midY - dirY * r} Q ${ax} ${midY} ${ax + dirX * r} ${midY} L ${bx - dirX * r} ${midY} Q ${bx} ${midY} ${bx} ${midY + dirY * r} L ${bx} ${edgeY}`
+      };
+    } else {
+      // For side callouts: line ALWAYS meets the badge at vertical center (by)
+      const edgeX = dirX === 1 ? (bx - hw) : (bx + hw);
+
+      if (absY < 4) {
+        return {
+          path: `M ${ax} ${by} L ${edgeX} ${by}`
+        };
+      }
+
+      const midX = (ax + edgeX) / 2;
+      const spanX = Math.abs(edgeX - ax);
+      const r = Math.min(10, spanX * 0.35, absY * 0.35);
+
+      if (r < 2) {
+        return {
+          path: `M ${ax} ${ay} L ${midX} ${ay} L ${midX} ${by} L ${edgeX} ${by}`
+        };
+      }
+
+      return {
+        path: `M ${ax} ${ay} L ${midX - dirX * r} ${ay} Q ${midX} ${ay} ${midX} ${ay + dirY * r} L ${midX} ${by - dirY * r} Q ${midX} ${by} ${midX + dirX * r} ${by} L ${edgeX} ${by}`
+      };
+    }
+  }
+
+  function drawLeaderLines(labelItems) {
+    if (!leaderSvg) return;
+    leaderSvg.innerHTML = '';
+
+    const fragment = document.createDocumentFragment();
+
+    labelItems.forEach(item => {
+      const ax = item.anchorX;
+      const ay = item.anchorY;
+      const bx = item.x;
+      const by = item.y;
+      const hw = item.width / 2;
+      const hh = item.height / 2;
+      const color = item.color || getLabelColor(item.pos);
+
+      const dx = bx - ax;
+      const dy = by - ay;
+      const dist = Math.hypot(dx, dy);
+
+      // Only draw leader line if badge is displaced away from its anchor
+      if (dist < 14) return;
+
+      const callout = createCalloutPath(ax, ay, bx, by, hw, hh, item.isSide);
+      if (!callout) return;
+
+      // 1. Crisp colored leader stem line (clean, flat, no dark border)
+      const stemPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      stemPath.setAttribute('d', callout.path);
+      stemPath.setAttribute('fill', 'none');
+      stemPath.setAttribute('stroke', color);
+      stemPath.setAttribute('stroke-width', '1.8');
+      stemPath.setAttribute('stroke-linecap', 'round');
+      stemPath.setAttribute('stroke-linejoin', 'round');
+      fragment.appendChild(stemPath);
+
+      // 2. Round pin indicator directly at (ax, ay)
+      const anchorCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      anchorCircle.setAttribute('cx', ax);
+      anchorCircle.setAttribute('cy', ay);
+      anchorCircle.setAttribute('r', '4');
+      anchorCircle.setAttribute('fill', '#ffffff');
+      anchorCircle.setAttribute('stroke', color);
+      anchorCircle.setAttribute('stroke-width', '2');
+      fragment.appendChild(anchorCircle);
+    });
+
+    leaderSvg.appendChild(fragment);
+  }
+
   function resolveVisibleOverlayLabelOverlaps() {
-    const visibleLabels = Array.from(overlay.querySelectorAll('.css-inspector-olabel.visible'));
-    if (visibleLabels.length <= 1) return;
+    const visibleLabels = [
+      ...Array.from(overlay.querySelectorAll('.css-inspector-olabel.visible')),
+      ...Array.from(gapHighlightsContainer ? gapHighlightsContainer.querySelectorAll('.css-inspector-gap-badge') : [])
+    ];
+
+    if (visibleLabels.length === 0) {
+      if (leaderSvg) leaderSvg.innerHTML = '';
+      return;
+    }
+
+    const ctx = overlay._inspectorContext || {
+      contentCenterX: window.innerWidth / 2,
+      contentCenterY: window.innerHeight / 2,
+      top: 0,
+      left: 0,
+      width: 0,
+      height: 0,
+      pt: 0, pb: 0, pl: 0, pr: 0,
+      bt: 0, bb: 0, bl: 0, br: 0,
+      mt: 0, mb: 0, ml: 0, mr: 0
+    };
+    const { contentCenterX, contentCenterY, top, left, width, height, pt, pb, pl, pr, bt, bb, bl, br, mt, mb, ml, mr } = ctx;
 
     const labelItems = visibleLabels.map(lbl => {
-      const w = lbl.offsetWidth || Math.max(38, (lbl.textContent.length * 8) + 16);
-      const h = lbl.offsetHeight || 24;
-      const x = parseFloat(lbl.style.left) || 0;
-      const y = parseFloat(lbl.style.top) || 0;
+      const rect = lbl.getBoundingClientRect();
+      const textLen = (lbl.textContent || '').length;
+      const w = rect.width > 0 ? rect.width : Math.max(38, textLen * 8 + 18);
+      const h = rect.height > 0 ? rect.height : 21;
+      const x = parseFloat(lbl.style.left) || (rect.left + rect.width / 2);
+      const y = parseFloat(lbl.style.top) || (rect.top + rect.height / 2);
+      const ax = parseFloat(lbl.dataset.anchorX);
+      const ay = parseFloat(lbl.dataset.anchorY);
+      const color = lbl.dataset.color || getLabelColor(lbl.dataset.pos);
+      const isSide = lbl.dataset.pos === 'height' || lbl.dataset.pos === 'padding-left' || lbl.dataset.pos === 'padding-right' || lbl.dataset.pos === 'margin-left' || lbl.dataset.pos === 'margin-right' || lbl.dataset.pos === 'border-left' || lbl.dataset.pos === 'border-right';
       return {
         el: lbl,
         pos: lbl.dataset.pos,
         width: w,
         height: h,
         x: x,
-        y: y
+        y: y,
+        anchorX: isNaN(ax) ? x : ax,
+        anchorY: isNaN(ay) ? y : ay,
+        color: color,
+        isSide: isSide
       };
     });
 
-    const padding = 6;
-    const maxIterations = 50;
+    // ── Zone Classification ──
+    const topItems = [];
+    const bottomItems = [];
+    const leftItems = [];
+    const rightItems = [];
+    const neutralItems = [];
 
-    for (let iter = 0; iter < maxIterations; iter++) {
-      let moved = false;
+    for (const item of labelItems) {
+      const p = item.pos;
+      if (p === 'padding-top' || p === 'margin-top' || p === 'border-top') {
+        topItems.push(item);
+      } else if (p === 'padding-bottom' || p === 'margin-bottom' || p === 'border-bottom') {
+        bottomItems.push(item);
+      } else if (p === 'padding-left' || p === 'margin-left' || p === 'border-left' || p === 'height') {
+        leftItems.push(item);
+      } else if (p === 'padding-right' || p === 'margin-right' || p === 'border-right') {
+        rightItems.push(item);
+      } else {
+        // e.g. 'width', 'content-dims', 'gap'
+        neutralItems.push(item);
+      }
+    }
 
-      for (let i = 0; i < labelItems.length; i++) {
-        for (let j = i + 1; j < labelItems.length; j++) {
-          const b1 = labelItems[i];
-          const b2 = labelItems[j];
+    const hasTopRoom = top >= 36;
 
-          const w1 = b1.width / 2;
-          const h1 = b1.height / 2;
-          const w2 = b2.width / 2;
-          const h2 = b2.height / 2;
+    // Distribute neutral items (e.g. width)
+    for (const item of neutralItems) {
+      if (item.pos === 'content-dims') {
+        if (height >= 36 && width >= 70) {
+          item.x = contentCenterX;
+          item.y = contentCenterY;
+          item.anchorX = contentCenterX;
+          item.anchorY = contentCenterY;
+          continue;
+        }
+      }
+      if (hasTopRoom && topItems.length <= bottomItems.length) {
+        topItems.push(item);
+      } else {
+        bottomItems.push(item);
+      }
+    }
 
-          const dx = b2.x - b1.x;
-          const dy = b2.y - b1.y;
+    // Viewport check: If element is too close to top of viewport, move topItems to bottomItems so they stay visible
+    if (!hasTopRoom && topItems.length > 0) {
+      while (topItems.length > 0) {
+        bottomItems.unshift(topItems.pop());
+      }
+    }
 
-          const minDistanceX = w1 + w2 + padding;
-          const minDistanceY = h1 + h2 + padding;
+    // ── Single Line Rule: Center directly in item middle ──
+    if (labelItems.length === 1) {
+      const item = labelItems[0];
+      if (!item.isSide) {
+        item.x = contentCenterX;
+        item.anchorX = contentCenterX;
+        if (bottomItems.includes(item)) {
+          item.y = top + height + 26;
+        } else {
+          item.y = hasTopRoom ? (top - 26) : (top + height + 26);
+        }
+      } else {
+        item.y = contentCenterY;
+        item.anchorY = contentCenterY;
+        item.x = (left >= 60) ? (left - 50) : (left + width + 50);
+        item.anchorX = (left >= 60) ? left : (left + width);
+      }
+    }
+    // ── 2 Lines Rule: One Top, One Bottom (Zero Overlap, Centered in Number) ──
+    else if (labelItems.length === 2 && hasTopRoom && topItems.length === 1 && bottomItems.length === 1) {
+      const itemTop = topItems[0];
+      const itemBottom = bottomItems[0];
 
-          const overlapX = minDistanceX - Math.abs(dx);
-          const overlapY = minDistanceY - Math.abs(dy);
+      // Top line directly in middle at top
+      itemTop.x = contentCenterX;
+      itemTop.anchorX = contentCenterX;
+      itemTop.y = top - 26;
 
-          if (overlapX > 0 && overlapY > 0) {
-            moved = true;
+      // Bottom line directly in middle at bottom
+      itemBottom.x = contentCenterX;
+      itemBottom.anchorX = contentCenterX;
+      itemBottom.y = top + height + 26;
+    }
+    // ── Multi-Line Zone Distribution: Horizontally spaced & locked to center of number ──
+    else {
+      // 1. Arrange topItems horizontally (each line centered with its number)
+      if (topItems.length === 1) {
+        topItems[0].x = contentCenterX;
+        topItems[0].anchorX = contentCenterX;
+        topItems[0].y = top - 26;
+      } else if (topItems.length > 1) {
+        const count = topItems.length;
+        const totalW = topItems.reduce((acc, it) => acc + it.width, 0);
+        const spacing = Math.max(72, Math.min(110, (totalW + 40) / count));
 
-            if (overlapX < overlapY) {
-              const shift = (overlapX / 2) + 0.5;
-              const sign = dx >= 0 ? 1 : -1;
-              b1.x -= shift * sign;
-              b2.x += shift * sign;
-            } else {
-              const shift = (overlapY / 2) + 0.5;
-              const sign = dy >= 0 ? 1 : -1;
-              b1.y -= shift * sign;
-              b2.y += shift * sign;
-            }
-          }
+        for (let i = 0; i < count; i++) {
+          const offsetIdx = i - (count - 1) / 2;
+          topItems[i].x = contentCenterX + offsetIdx * spacing;
+          topItems[i].anchorX = topItems[i].x; // Locked to center of number!
+          topItems[i].y = top - 26;
         }
       }
 
-      if (!moved) break;
+      // 2. Arrange bottomItems horizontally (each line centered with its number)
+      if (bottomItems.length === 1) {
+        bottomItems[0].x = contentCenterX;
+        bottomItems[0].anchorX = contentCenterX;
+        bottomItems[0].y = top + height + 26;
+      } else if (bottomItems.length > 1) {
+        const count = bottomItems.length;
+        const totalW = bottomItems.reduce((acc, it) => acc + it.width, 0);
+        const spacing = Math.max(72, Math.min(110, (totalW + 40) / count));
+
+        for (let i = 0; i < count; i++) {
+          const offsetIdx = i - (count - 1) / 2;
+          bottomItems[i].x = contentCenterX + offsetIdx * spacing;
+          bottomItems[i].anchorX = bottomItems[i].x; // Locked to center of number!
+          bottomItems[i].y = top + height + 26;
+        }
+      }
+    }
+
+    // 3. Arrange leftItems vertically
+    if (leftItems.length === 1) {
+      leftItems[0].x = (left >= 60) ? (left - 50) : (left + width + 50);
+      leftItems[0].y = contentCenterY;
+      leftItems[0].anchorX = (left >= 60) ? left : (left + width);
+      leftItems[0].anchorY = contentCenterY;
+    } else if (leftItems.length > 1) {
+      const count = leftItems.length;
+      for (let i = 0; i < count; i++) {
+        const offsetIdx = i - (count - 1) / 2;
+        leftItems[i].x = (left >= 60) ? (left - 50) : (left + width + 50);
+        leftItems[i].anchorX = (left >= 60) ? left : (left + width);
+        leftItems[i].y = contentCenterY + offsetIdx * 28;
+        leftItems[i].anchorY = leftItems[i].y;
+      }
+    }
+
+    // 4. Arrange rightItems vertically
+    if (rightItems.length === 1) {
+      rightItems[0].x = left + width + 50;
+      rightItems[0].y = contentCenterY;
+      rightItems[0].anchorX = left + width;
+      rightItems[0].anchorY = contentCenterY;
+    } else if (rightItems.length > 1) {
+      const count = rightItems.length;
+      for (let i = 0; i < count; i++) {
+        const offsetIdx = i - (count - 1) / 2;
+        rightItems[i].x = left + width + 50;
+        rightItems[i].anchorX = left + width;
+        rightItems[i].y = contentCenterY + offsetIdx * 28;
+        rightItems[i].anchorY = rightItems[i].y;
+      }
+    }
+
+    // Ensure proper anchorY for each item
+    for (const item of labelItems) {
+      const p = item.pos;
+      if (p === 'padding-top') {
+        item.anchorY = top + bt + Math.max(pt / 2, 2);
+      } else if (p === 'padding-bottom') {
+        item.anchorY = top + height - bb - Math.max(pb / 2, 2);
+      } else if (p === 'margin-top' || p === 'border-top') {
+        item.anchorY = top;
+      } else if (p === 'margin-bottom' || p === 'border-bottom') {
+        item.anchorY = top + height;
+      } else if (p === 'width') {
+        item.anchorY = item.y <= top ? top : (top + height);
+      }
+    }
+
+    // Viewport Boundary Clamping: Never let any badge be cut off by screen boundaries!
+    const screenPad = 10;
+    for (const item of labelItems) {
+      const halfW = item.width / 2;
+      const halfH = item.height / 2;
+      item.x = Math.max(halfW + screenPad, Math.min(window.innerWidth - halfW - screenPad, item.x));
+      item.y = Math.max(halfH + screenPad, Math.min(window.innerHeight - halfH - screenPad, item.y));
+      if (!item.isSide) {
+        const minAx = left + bl + 6;
+        const maxAx = left + width - br - 6;
+        if (minAx < maxAx) {
+          item.anchorX = Math.max(minAx, Math.min(maxAx, item.x));
+        } else {
+          item.anchorX = contentCenterX;
+        }
+      } else {
+        const minAy = top + bt + 6;
+        const maxAy = top + height - bb - 6;
+        if (minAy < maxAy) {
+          item.anchorY = Math.max(minAy, Math.min(maxAy, item.y));
+        } else {
+          item.anchorY = contentCenterY;
+        }
+      }
     }
 
     // Apply resolved positions
@@ -1191,6 +1649,9 @@ if (!window.cssInspectorInjected) {
       item.el.style.left = `${item.x}px`;
       item.el.style.top = `${item.y}px`;
     }
+
+    // Render pin leader lines with precision arrows and smooth rounded elbows
+    drawLeaderLines(labelItems);
   }
 
   function showOverlayLabels(...args) {
@@ -1205,9 +1666,10 @@ if (!window.cssInspectorInjected) {
       const match = flattened.some(type => {
         if (!type || typeof type !== 'string') return false;
         if (pos === type) return true;
-        if ((type === 'padding' || type === 'padding-all') && pos.startsWith('padding-')) return true;
-        if ((type === 'margin' || type === 'margin-all') && pos.startsWith('margin-')) return true;
-        if ((type === 'border' || type === 'border-all') && pos.startsWith('border-')) return true;
+        const isNonZero = lbl.textContent && lbl.textContent !== '0px' && lbl.textContent !== '0' && lbl.textContent !== '-';
+        if ((type === 'padding' || type === 'padding-all') && pos.startsWith('padding-')) return isNonZero;
+        if ((type === 'margin' || type === 'margin-all') && pos.startsWith('margin-')) return isNonZero;
+        if ((type === 'border' || type === 'border-all') && pos.startsWith('border-')) return isNonZero;
         if ((type === 'content' || type === 'content-dims') && pos === 'content-dims') return true;
         if (type === 'width' && pos === 'width') return true;
         if (type === 'height' && pos === 'height') return true;
@@ -1228,6 +1690,9 @@ if (!window.cssInspectorInjected) {
     labels.forEach(lbl => lbl.classList.remove('visible'));
     if (gapHighlightsContainer && !selectedHighlightRegions.has('gap') && currentHighlightedRegion !== 'gap') {
       gapHighlightsContainer.innerHTML = '';
+    }
+    if (leaderSvg) {
+      leaderSvg.innerHTML = '';
     }
   }
 
@@ -1357,6 +1822,10 @@ if (!window.cssInspectorInjected) {
 
     const gaps = computeGaps(target);
     gaps.forEach(slot => {
+      const parts = String(slot.value).split('/').map(p => parseFloat(p.trim()) || 0);
+      const maxVal = Math.max(...parts);
+      if (maxVal <= 0) return;
+
       const strip = document.createElement('div');
       strip.className = 'css-inspector-gap-strip';
       strip.style.left = `${slot.left}px`;
@@ -1365,11 +1834,36 @@ if (!window.cssInspectorInjected) {
       strip.style.height = `${slot.height}px`;
       gapHighlightsContainer.appendChild(strip);
 
+      const slotCenterX = slot.left + slot.width / 2;
+      const slotCenterY = slot.top + slot.height / 2;
+
+      let badgeX = slotCenterX;
+      let badgeY = slotCenterY;
+
+      // Project outward if slot is thin so it doesn't get crammed or overlayed
+      if (slot.type === 'row' || (slot.height < 24 && slot.width >= slot.height)) {
+        if (slot.left + slot.width + 36 <= window.innerWidth) {
+          badgeX = slot.left + slot.width + 24;
+        } else {
+          badgeX = Math.max(30, slot.left - 24);
+        }
+      } else if (slot.type === 'column' || (slot.width < 28 && slot.height > slot.width)) {
+        if (slot.top - 24 >= 10) {
+          badgeY = slot.top - 20;
+        } else {
+          badgeY = slot.top + slot.height + 20;
+        }
+      }
+
       const badge = document.createElement('span');
       badge.className = 'css-inspector-gap-badge';
       badge.textContent = slot.value;
-      badge.style.left = `${slot.left + slot.width / 2}px`;
-      badge.style.top = `${slot.top + slot.height / 2}px`;
+      badge.style.left = `${badgeX}px`;
+      badge.style.top = `${badgeY}px`;
+      badge.dataset.anchorX = slotCenterX;
+      badge.dataset.anchorY = slotCenterY;
+      badge.dataset.color = '#8b5cf6';
+      badge.dataset.pos = 'gap';
       gapHighlightsContainer.appendChild(badge);
     });
   }
@@ -1400,6 +1894,8 @@ if (!window.cssInspectorInjected) {
     const left = rect.left;
     const width = rect.width;
     const height = rect.height;
+    const contentW = Math.max(0, width - bl - br - pl - pr);
+    const contentH = Math.max(0, height - bt - bb - pt - pb);
 
     let rTop = 0, rLeft = 0, rWidth = 0, rHeight = 0;
     let colorType = '';
@@ -1415,7 +1911,7 @@ if (!window.cssInspectorInjected) {
         break;
       case 'padding-right':
         rTop = top + bt;
-        rLeft = pr > 0 ? (left + width - bl - pr) : (left + width - bl - 2);
+        rLeft = pr > 0 ? (left + width - br - pr) : (left + width - br - 2);
         rWidth = pr > 0 ? pr : 2;
         rHeight = Math.max(0, height - bt - bb);
         colorType = 'padding';
@@ -1518,12 +2014,18 @@ if (!window.cssInspectorInjected) {
 
       // ── Width / Height / Content Dimensions ──
       case 'width':
+        rTop = top;
+        rLeft = left;
+        rWidth = width;
+        rHeight = height;
+        colorType = 'width';
+        break;
       case 'height':
         rTop = top;
         rLeft = left;
         rWidth = width;
         rHeight = height;
-        colorType = 'content';
+        colorType = 'height';
         break;
       case 'content':
         return { top: rect.top + bt + pt, left: rect.left + bl + pl, width: contentW, height: contentH, colorType: 'content' };
@@ -1534,6 +2036,8 @@ if (!window.cssInspectorInjected) {
       default:
         return null;
     }
+
+    return { top: rTop, left: rLeft, width: rWidth, height: rHeight, colorType };
   }
 
   function highlightRegion(target, regionKey) {
@@ -1562,6 +2066,8 @@ if (!window.cssInspectorInjected) {
       overlayHighlight.style.left = `${geo.left}px`;
       overlayHighlight.style.width = `${geo.width}px`;
       overlayHighlight.style.height = `${geo.height}px`;
+      const borderRadius = (regionKey === 'margin' || regionKey.startsWith('margin')) ? '0px' : (window.getComputedStyle(activeEl).borderRadius || '0px');
+      overlayHighlight.style.borderRadius = borderRadius;
       overlayHighlight.className = `active type-${geo.colorType}`;
 
       const types = Array.from(selectedHighlightRegions);
@@ -1605,6 +2111,8 @@ if (!window.cssInspectorInjected) {
         itemEl.style.left = `${geo.left}px`;
         itemEl.style.width = `${geo.width}px`;
         itemEl.style.height = `${geo.height}px`;
+        const borderRadius = (regionKey === 'margin' || regionKey.startsWith('margin')) ? '0px' : (window.getComputedStyle(activeEl).borderRadius || '0px');
+        itemEl.style.borderRadius = borderRadius;
         selectedOverlayContainer.appendChild(itemEl);
       }
     });
@@ -2414,6 +2922,7 @@ if (!window.cssInspectorInjected) {
     if (l === 'border' || l === 'border width' || l === 'border style') return 'border';
     if (l === 'width') return 'width';
     if (l === 'height') return 'height';
+    if (l === 'radius') return 'border';
     if (l === 'gap' || l.startsWith('gap')) return 'gap';
     return null;
   }
@@ -2581,7 +3090,7 @@ if (!window.cssInspectorInjected) {
 
     function tick() {
       if (clickedTarget && panel && panel.classList.contains('active')) {
-        updateOverlay(clickedTarget);
+        updateOverlay(pauseOnPopup ? clickedTarget : (currentTarget || clickedTarget));
 
         if (clickedOverlay && clickedOverlay.classList.contains('active')) {
           const rect = clickedTarget.getBoundingClientRect();
@@ -3167,10 +3676,7 @@ if (!window.cssInspectorInjected) {
       sendResponse({ isActive });
     } else if (request.action === 'hideOtherPanels') {
       if (request.instanceId !== myInstanceId) {
-        if (panel) panel.classList.remove('active');
-        if (overlay) overlay.classList.remove('active');
-        if (clickedOverlay) clickedOverlay.classList.remove('active');
-        clickedTarget = null;
+        closePanel();
         isFrameHovered = false;
       }
     } else if (request.action === 'hideOtherOverlays') {

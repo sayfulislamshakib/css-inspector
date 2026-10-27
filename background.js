@@ -3,10 +3,13 @@
 // Listen for clicks on the extension icon
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get({ blockInteractions: true }, (result) => {
-    chrome.contextMenus.create({
-      id: "toggleBlockInteractions",
-      title: result.blockInteractions ? "Disable Click Blocking" : "Enable Click Blocking",
-      contexts: ["all"]
+    // Remove first so re-installs/updates don't throw "duplicate id" errors
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: "toggleBlockInteractions",
+        title: result.blockInteractions ? "Disable Click Blocking" : "Enable Click Blocking",
+        contexts: ["all"]
+      });
     });
   });
 });
@@ -60,9 +63,11 @@ async function toggleInspectorForTab(tab) {
   if (!tab || !tab.id) return;
   if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://'))) return;
 
+  // Read the current state from the top frame, injecting the content script if needed
+  let currentState = false;
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { action: "toggleInspector" });
-    updateBadge(response, tab.id);
+    const state = await chrome.tabs.sendMessage(tab.id, { action: "getState" }, { frameId: 0 });
+    currentState = !!(state && state.isActive);
   } catch (e) {
     try {
       await chrome.scripting.insertCSS({
@@ -73,12 +78,23 @@ async function toggleInspectorForTab(tab) {
         target: { tabId: tab.id, allFrames: true },
         files: ['content/content.js']
       });
-      
-      const response = await chrome.tabs.sendMessage(tab.id, { action: "toggleInspector" });
-      updateBadge(response, tab.id);
     } catch (injectError) {
       // Failed to inject script (e.g. on restricted chrome:// pages)
+      return;
     }
+  }
+
+  // Send an explicit state so every frame ends up in the same state
+  await setInspectorStateForTab(tab.id, !currentState);
+}
+
+async function setInspectorStateForTab(tabId, isActive) {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { action: "toggleInspector", isActive });
+    updateBadge(response, tabId);
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -100,6 +116,13 @@ function updateBadge(response, tabId) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'badgeOff' && sender.tab) {
     chrome.action.setBadgeText({ text: "", tabId: sender.tab.id });
+  }
+
+  // In-page shortcut (or Esc) asked to change state — apply it to every frame in the tab
+  if (request.action === 'requestToggle' && sender.tab) {
+    setInspectorStateForTab(sender.tab.id, !!request.isActive)
+      .then((ok) => sendResponse({ ok }));
+    return true; // keep the message channel open for the async response
   }
   
   // When a panel opens in one frame, tell all other frames in the tab to hide theirs
