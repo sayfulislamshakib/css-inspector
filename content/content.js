@@ -35,12 +35,16 @@ if (!window.cssInspectorInjected) {
 
   let lastMouseX = 0;
   let lastMouseY = 0;
+  let currentAnimTarget = null;
+  let lastMouseDownTarget = null;
+  let lastMouseDownTime = 0;
 
   function isOurUI(el) {
     if (!el) return true;
     if (el === overlay || el === clickedOverlay) return true;
     if (el.id && el.id.startsWith('css-inspector-')) return true;
-    if (el.closest && el.closest('#css-inspector-panel')) return true;
+    if (el.className && typeof el.className === 'string' && el.className.includes('css-inspector-')) return true;
+    if (el.closest && (el.closest('#css-inspector-panel') || el.closest('#css-inspector-overlay-container') || el.closest('#css-inspector-toast'))) return true;
     return false;
   }
 
@@ -139,7 +143,9 @@ if (!window.cssInspectorInjected) {
       if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
 
       const style = window.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+      const isAnimated = style.animationName && style.animationName !== 'none';
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (style.opacity === '0' && !isAnimated) continue;
 
       const area = r.width * r.height;
       const depth = getDepth(el);
@@ -357,6 +363,7 @@ if (!window.cssInspectorInjected) {
       selectedHighlightRegions.clear();
       clearSelectedHighlightUI();
       clearMeasurement();
+      stopOverlayAnimationTracking();
     });
 
     const contentEl = document.getElementById('css-inspector-content');
@@ -464,6 +471,38 @@ if (!window.cssInspectorInjected) {
 
         updateSelectedUI();
         renderSelectedRegions(el);
+      }
+
+      // 0. If clicked animation play/pause toggle button
+      const animBtn = e.target.closest('.css-inspector-anim-btn');
+      if (animBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const animTarget = currentAnimTarget || clickedTarget;
+        if (animTarget) {
+          const currentPlayState = window.getComputedStyle(animTarget).animationPlayState;
+          const willPause = currentPlayState !== 'paused';
+          animTarget.style.animationPlayState = willPause ? 'paused' : 'running';
+          animBtn.textContent = willPause ? '▶ Resume' : '⏸ Pause';
+          animBtn.classList.toggle('paused', willPause);
+          const playStateText = animBtn.parentElement ? animBtn.parentElement.querySelector('.css-inspector-value-text') : null;
+          if (playStateText) {
+            playStateText.textContent = willPause ? 'paused' : 'running';
+            playStateText.style.color = willPause ? '#f59e0b' : '#10b981';
+          }
+          showToast(`Animation ${willPause ? 'paused' : 'resumed'}`);
+        }
+        return;
+      }
+
+      // 0.1 If clicked inspect animated container button
+      const inspectParentBtn = e.target.closest('[data-action="inspect-anim-parent"]');
+      if (inspectParentBtn && currentAnimTarget) {
+        e.preventDefault();
+        e.stopPropagation();
+        inspectElement(currentAnimTarget, null);
+        updateOverlay(currentAnimTarget);
+        return;
       }
 
       // 1. If clicked a class text (.css-inspector-class-text)
@@ -582,13 +621,23 @@ if (!window.cssInspectorInjected) {
       }
     }, true);
 
-    // Intercept other actions
+    // Intercept other actions and record mouse down target for fast moving/animating items
     const intercept = (e) => {
-      if (!isActive || !blockInteractions) return;
+      if (!isActive) return;
       const target = (e.composedPath && e.composedPath()[0]) || e.target;
-      if (target.closest && target.closest('#css-inspector-panel')) return;
-      e.preventDefault();
-      e.stopPropagation();
+      if (target && target.closest && target.closest('#css-inspector-panel')) return;
+
+      if (e.type === 'mousedown' || e.type === 'pointerdown') {
+        if (!isOurUI(target)) {
+          lastMouseDownTarget = target;
+          lastMouseDownTime = Date.now();
+        }
+      }
+
+      if (blockInteractions) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
     };
 
     document.addEventListener('mousedown', intercept, true);
@@ -733,6 +782,7 @@ if (!window.cssInspectorInjected) {
       currentHighlightedRegion = null;
       selectedHighlightRegions.clear();
       clearMeasurement();
+      stopOverlayAnimationTracking();
       document.body.classList.remove('css-inspector-mode-active');
       showToast("Inspector: OFF");
     } else {
@@ -1584,7 +1634,18 @@ if (!window.cssInspectorInjected) {
     }
 
     // Determine deepest target element to inspect / measure
-    let el = getDeepestElementAt(e.clientX, e.clientY, rawTarget) || currentTarget;
+    let candidateTarget = rawTarget;
+    if (Date.now() - lastMouseDownTime < 700 && lastMouseDownTarget && !isOurUI(lastMouseDownTarget)) {
+      // If rawTarget is body or html (common when animated items move during click), prefer lastMouseDownTarget
+      if (!candidateTarget || candidateTarget === document.body || candidateTarget === document.documentElement) {
+        candidateTarget = lastMouseDownTarget;
+      }
+    }
+    if ((!candidateTarget || candidateTarget === document.body || candidateTarget === document.documentElement) && currentTarget && !isOurUI(currentTarget)) {
+      candidateTarget = currentTarget;
+    }
+
+    let el = getDeepestElementAt(e.clientX, e.clientY, candidateTarget) || candidateTarget || currentTarget;
 
     if (!el || isOurUI(el)) return;
 
@@ -1615,7 +1676,7 @@ if (!window.cssInspectorInjected) {
       clearMeasurement();
     }
 
-    if (el === clickedTarget) return;
+    if (el === clickedTarget && panel && panel.classList.contains('active')) return;
 
     clickedTarget = el;
     isMeasuring = false;
@@ -2241,7 +2302,10 @@ if (!window.cssInspectorInjected) {
       letterSpacing: /^tracking-(tighter|tight|normal|wide|wider|widest|\[)/,
       textAlign: /^text-(left|center|right|justify|start|end)/,
       color: /^text-(?!xs|sm|base|lg|xl|\d+xl|left|right|center|justify|start|end|uppercase|lowercase|capitalize|normal-case|italic|non-italic|wrap|nowrap|balance|pretty|ellipsis|clip|break-)/,
-      backgroundColor: /^bg-(?!auto|cover|contain|bottom|top|center|left|right|repeat|no-repeat|fixed|local|scroll|clip|origin)/
+      backgroundColor: /^bg-(?!auto|cover|contain|bottom|top|center|left|right|repeat|no-repeat|fixed|local|scroll|clip|origin)/,
+      animation: /^animate-/,
+      transition: /^(transition|duration-|ease-|delay-)/,
+      transform: /^(rotate-|scale-|translate-|skew-|transform)/
     };
 
     const regex = patterns[category];
@@ -2297,7 +2361,10 @@ if (!window.cssInspectorInjected) {
       letterSpacing: 'letterSpacing',
       textAlign: 'textAlign',
       color: 'color',
-      backgroundColor: 'backgroundColor'
+      backgroundColor: 'backgroundColor',
+      animation: 'animation',
+      transition: 'transition',
+      transform: 'transform'
     };
 
     const cssProp = cssPropMap[category];
@@ -2374,7 +2441,173 @@ if (!window.cssInspectorInjected) {
   `;
   }
 
+  // Helper to find animation on target, its pseudo-elements, or its closest animated ancestor
+  function findAnimatedElement(target) {
+    if (!target || target === document.body || target === document.documentElement) return null;
+
+    // 1. Direct animation on target
+    const s = window.getComputedStyle(target);
+    if (s.animationName && s.animationName !== 'none' && s.animationName !== '') {
+      return { el: target, source: 'self', styles: s, animationName: s.animationName };
+    }
+
+    // 2. Pseudo-elements (::before, ::after) on target
+    try {
+      const before = window.getComputedStyle(target, '::before');
+      if (before.animationName && before.animationName !== 'none' && before.animationName !== '') {
+        return { el: target, source: '::before', styles: before, animationName: before.animationName };
+      }
+      const after = window.getComputedStyle(target, '::after');
+      if (after.animationName && after.animationName !== 'none' && after.animationName !== '') {
+        return { el: target, source: '::after', styles: after, animationName: after.animationName };
+      }
+    } catch (e) { }
+
+    // 3. Web Animations API on target
+    if (target.getAnimations) {
+      try {
+        const anims = target.getAnimations();
+        if (anims && anims.length > 0) {
+          const first = anims[0];
+          const animName = first.animationName || (first.id ? first.id : 'web-animation');
+          return { el: target, source: 'web-animation', styles: s, animationName: animName, animObj: first };
+        }
+      } catch (e) { }
+    }
+
+    // 4. Closest ancestor with animation (e.g. clicked inside animated button, card, spinner)
+    let curr = target.parentElement;
+    let depth = 0;
+    while (curr && curr !== document.body && curr !== document.documentElement && depth < 10) {
+      depth++;
+      const cs = window.getComputedStyle(curr);
+      if (cs.animationName && cs.animationName !== 'none' && cs.animationName !== '') {
+        return { el: curr, source: 'ancestor', styles: cs, animationName: cs.animationName };
+      }
+      try {
+        const cb = window.getComputedStyle(curr, '::before');
+        if (cb.animationName && cb.animationName !== 'none' && cb.animationName !== '') {
+          return { el: curr, source: 'ancestor::before', styles: cb, animationName: cb.animationName };
+        }
+        const ca = window.getComputedStyle(curr, '::after');
+        if (ca.animationName && ca.animationName !== 'none' && ca.animationName !== '') {
+          return { el: curr, source: 'ancestor::after', styles: ca, animationName: ca.animationName };
+        }
+      } catch (e) { }
+      if (curr.getAnimations) {
+        try {
+          const anims = curr.getAnimations();
+          if (anims && anims.length > 0) {
+            const first = anims[0];
+            const animName = first.animationName || (first.id ? first.id : 'web-animation');
+            return { el: curr, source: 'ancestor-web-animation', styles: cs, animationName: animName, animObj: first };
+          }
+        } catch (e) { }
+      }
+      curr = curr.parentElement;
+    }
+
+    // 5. Descendants (e.g. clicked container of animated SVG or spinner)
+    if (target.getAnimations) {
+      try {
+        const subAnims = target.getAnimations({ subtree: true });
+        if (subAnims && subAnims.length > 0) {
+          const first = subAnims[0];
+          const subTarget = first.effect ? first.effect.target : null;
+          if (subTarget && subTarget !== target) {
+            return {
+              el: subTarget,
+              source: 'child',
+              styles: window.getComputedStyle(subTarget),
+              animationName: first.animationName || 'child-animation',
+              animObj: first
+            };
+          }
+        }
+      } catch (e) { }
+    }
+
+    return null;
+  }
+
+  // Helper to find transition on target or its closest ancestor
+  function findTransitionElement(target) {
+    if (!target || target === document.body || target === document.documentElement) return null;
+    const s = window.getComputedStyle(target);
+    const hasSelfTrans = s.transitionDuration && s.transitionDuration !== '0s' && s.transitionDuration !== '0ms' && s.transitionProperty && s.transitionProperty !== 'none';
+    if (hasSelfTrans) {
+      return { el: target, source: 'self', styles: s };
+    }
+    let curr = target.parentElement;
+    let depth = 0;
+    while (curr && curr !== document.body && curr !== document.documentElement && depth < 6) {
+      depth++;
+      const cs = window.getComputedStyle(curr);
+      const hasTrans = cs.transitionDuration && cs.transitionDuration !== '0s' && cs.transitionDuration !== '0ms' && cs.transitionProperty && cs.transitionProperty !== 'none';
+      if (hasTrans) {
+        return { el: curr, source: 'ancestor', styles: cs };
+      }
+      curr = curr.parentElement;
+    }
+    return null;
+  }
+
+  // Helper to find CSS keyframe rule by animation name
+  function findKeyframesRule(animationName) {
+    if (!animationName || animationName === 'none') return null;
+    const firstAnim = animationName.split(',')[0].trim();
+    try {
+      for (let i = document.styleSheets.length - 1; i >= 0; i--) {
+        const sheet = document.styleSheets[i];
+        let rules;
+        try { rules = sheet.cssRules || sheet.rules; } catch (e) { continue; }
+        if (!rules) continue;
+        for (let j = rules.length - 1; j >= 0; j--) {
+          const rule = rules[j];
+          if (rule.type === CSSRule.KEYFRAMES_RULE && rule.name === firstAnim) {
+            return rule;
+          }
+        }
+      }
+    } catch (e) { }
+    return null;
+  }
+
+  let animTrackingFrameId = null;
+  function startOverlayAnimationTracking(targetEl) {
+    stopOverlayAnimationTracking();
+    const trackTarget = targetEl || clickedTarget;
+    if (!trackTarget) return;
+
+    function tick() {
+      if (clickedTarget && panel && panel.classList.contains('active')) {
+        updateOverlay(clickedTarget);
+
+        if (clickedOverlay && clickedOverlay.classList.contains('active')) {
+          const rect = clickedTarget.getBoundingClientRect();
+          clickedOverlay.style.top = `${rect.top}px`;
+          clickedOverlay.style.left = `${rect.left}px`;
+          clickedOverlay.style.width = `${rect.width}px`;
+          clickedOverlay.style.height = `${rect.height}px`;
+        }
+
+        animTrackingFrameId = requestAnimationFrame(tick);
+      } else {
+        stopOverlayAnimationTracking();
+      }
+    }
+    animTrackingFrameId = requestAnimationFrame(tick);
+  }
+
+  function stopOverlayAnimationTracking() {
+    if (animTrackingFrameId) {
+      cancelAnimationFrame(animTrackingFrameId);
+      animTrackingFrameId = null;
+    }
+  }
+
   function inspectElement(el, e) {
+    clickedTarget = el;
     currentHighlightedRegion = null;
     selectedHighlightRegions.clear();
     if (overlayHighlight) overlayHighlight.classList.remove('active');
@@ -2516,11 +2749,143 @@ if (!window.cssInspectorInjected) {
       extraRows += renderInspectorRow('Align', makeSelect('alignItems', alignOpts, styles.alignItems), 'align', el);
     }
 
+    if (styles.transform && styles.transform !== 'none') {
+      extraRows += renderInspectorRow('Transform', styles.transform, 'transform', el);
+    }
+
     if (extraRows) {
       extraPropsHtml = `
       <div class="css-inspector-section">
         <div class="css-inspector-section-title">Properties</div>
         ${extraRows}
+      </div>
+    `;
+    }
+
+    // Animation detection (checks element, pseudo-elements, Web Animations, and ancestors)
+    let animationSectionHtml = '';
+    const animInfo = findAnimatedElement(el);
+    if (animInfo) {
+      const animEl = animInfo.el;
+      const animStyles = animInfo.styles;
+      const animName = animInfo.animationName || animStyles.animationName;
+
+      let animRows = '';
+
+      // If animation is on an ancestor or pseudo-element, show source badge and quick switch
+      if (animInfo.source === 'ancestor') {
+        const tag = animEl.tagName.toLowerCase();
+        const cls = animEl.className && typeof animEl.className === 'string' && animEl.className.trim()
+          ? '.' + animEl.className.trim().split(/\s+/)[0]
+          : '';
+        animRows += `
+          <div class="css-inspector-row">
+            <span class="css-inspector-label">Applied On</span>
+            <div class="css-inspector-value" style="display:flex;align-items:center;gap:6px;">
+              <span class="css-inspector-value-text">&lt;${tag}${cls}&gt;</span>
+              <button class="css-inspector-inspect-parent-btn" data-action="inspect-anim-parent" title="Inspect animated container">Inspect</button>
+            </div>
+          </div>
+        `;
+      } else if (animInfo.source.includes('::')) {
+        animRows += `
+          <div class="css-inspector-row">
+            <span class="css-inspector-label">Applied On</span>
+            <div class="css-inspector-value">
+              <span class="css-inspector-value-text" style="color:#a855f7;font-weight:600;">${animInfo.source} pseudo-element</span>
+            </div>
+          </div>
+        `;
+      }
+
+      animRows += renderInspectorRow('Name', animName, 'animation', animEl);
+
+      // Keyframes preview if found in stylesheets
+      const kfRule = findKeyframesRule(animName);
+      if (kfRule && kfRule.cssRules && kfRule.cssRules.length > 0) {
+        const steps = Array.from(kfRule.cssRules).map(r => r.keyText).join(' → ');
+        animRows += `
+          <div class="css-inspector-row">
+            <span class="css-inspector-label">Keyframes</span>
+            <div class="css-inspector-value">
+              <span class="css-inspector-value-text" style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;color:#6366f1;">${steps}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      if (animStyles.animationDuration && animStyles.animationDuration !== '0s') {
+        animRows += renderInspectorRow('Duration', animStyles.animationDuration);
+      }
+      if (animStyles.animationTimingFunction) {
+        animRows += renderInspectorRow('Timing', animStyles.animationTimingFunction);
+      }
+      if (animStyles.animationIterationCount) {
+        animRows += renderInspectorRow('Iterations', animStyles.animationIterationCount);
+      }
+      if (animStyles.animationDelay && animStyles.animationDelay !== '0s') {
+        animRows += renderInspectorRow('Delay', animStyles.animationDelay);
+      }
+      if (animStyles.animationDirection && animStyles.animationDirection !== 'normal') {
+        animRows += renderInspectorRow('Direction', animStyles.animationDirection);
+      }
+      if (animStyles.animationFillMode && animStyles.animationFillMode !== 'none') {
+        animRows += renderInspectorRow('Fill Mode', animStyles.animationFillMode);
+      }
+
+      const isPaused = animStyles.animationPlayState === 'paused' || animEl.style.animationPlayState === 'paused';
+      const playStateText = isPaused ? 'paused' : 'running';
+      const playStateBtn = `<button class="css-inspector-anim-btn ${isPaused ? 'paused' : ''}" data-action="toggle-anim" title="Toggle animation play/pause">${isPaused ? '▶ Resume' : '⏸ Pause'}</button>`;
+      animRows += `
+        <div class="css-inspector-row">
+          <span class="css-inspector-label">Play State</span>
+          <div class="css-inspector-value" style="display:flex;flex-direction:row;align-items:center;gap:8px;">
+            <span class="css-inspector-value-text" style="color:${isPaused ? '#f59e0b' : '#10b981'};font-weight:600;">${playStateText}</span>
+            ${playStateBtn}
+          </div>
+        </div>
+      `;
+
+      animationSectionHtml = `
+      <div class="css-inspector-section">
+        <div class="css-inspector-section-title">Animation</div>
+        ${animRows}
+      </div>
+    `;
+    }
+
+    // Transition detection (checks element and ancestors)
+    let transitionSectionHtml = '';
+    const transInfo = findTransitionElement(el);
+    if (transInfo) {
+      const transEl = transInfo.el;
+      const transStyles = transInfo.styles;
+      let transRows = '';
+
+      if (transInfo.source === 'ancestor') {
+        const tag = transEl.tagName.toLowerCase();
+        const cls = transEl.className && typeof transEl.className === 'string' && transEl.className.trim()
+          ? '.' + transEl.className.trim().split(/\s+/)[0]
+          : '';
+        transRows += `
+          <div class="css-inspector-row">
+            <span class="css-inspector-label">Applied On</span>
+            <div class="css-inspector-value">
+              <span class="css-inspector-value-text">&lt;${tag}${cls}&gt;</span>
+            </div>
+          </div>
+        `;
+      }
+
+      transRows += renderInspectorRow('Property', transStyles.transitionProperty, 'transition', transEl);
+      transRows += renderInspectorRow('Duration', transStyles.transitionDuration);
+      if (transStyles.transitionTimingFunction) transRows += renderInspectorRow('Timing', transStyles.transitionTimingFunction);
+      if (transStyles.transitionDelay && transStyles.transitionDelay !== '0s') transRows += renderInspectorRow('Delay', transStyles.transitionDelay);
+
+      transitionSectionHtml = `
+      <div class="css-inspector-section">
+        <div class="css-inspector-section-title">Transition</div>
+        ${transRows}
       </div>
     `;
     }
@@ -2658,6 +3023,8 @@ if (!window.cssInspectorInjected) {
 
     ${typographyHtml}
     ${extraPropsHtml}
+    ${animationSectionHtml}
+    ${transitionSectionHtml}
     ${colorsSectionHtml}
 
     <div class="css-inspector-section">
@@ -2755,35 +3122,43 @@ if (!window.cssInspectorInjected) {
     updateOverlay(el);
 
     panel.classList.add('active');
+    if (animInfo || transInfo) {
+      currentAnimTarget = animInfo ? animInfo.el : (transInfo ? transInfo.el : null);
+      startOverlayAnimationTracking(currentAnimTarget || el);
+    } else {
+      currentAnimTarget = null;
+      stopOverlayAnimationTracking();
+    }
     try {
       chrome.runtime.sendMessage({ action: 'panelOpened', instanceId: myInstanceId });
     } catch (err) { }
 
-    // Position panel based on click
-    if (e) {
-      const panelWidth = panel.offsetWidth;
-      const panelHeight = panel.offsetHeight;
+    // Position panel reliably based on click or element bounding box
+    const clientX = (e && typeof e.clientX === 'number' && (e.clientX > 0 || e.clientY > 0)) ? e.clientX : (rect.left + rect.width / 2);
+    const clientY = (e && typeof e.clientY === 'number' && (e.clientX > 0 || e.clientY > 0)) ? e.clientY : (rect.top + rect.height / 2);
 
-      let top = e.clientY + 15;
-      let left = e.clientX + 15;
+    const panelWidth = panel.offsetWidth || 340;
+    const panelHeight = panel.offsetHeight || 420;
 
-      // Check if it goes off bottom
-      if (top + panelHeight > window.innerHeight) {
-        top = e.clientY - panelHeight - 15;
-      }
+    let top = clientY + 15;
+    let left = clientX + 15;
 
-      // Check if it goes off right
-      if (left + panelWidth > window.innerWidth) {
-        left = e.clientX - panelWidth - 15;
-      }
-
-      // Final boundary checks just in case
-      top = Math.max(10, top);
-      left = Math.max(10, left);
-
-      panel.style.top = `${top}px`;
-      panel.style.left = `${left}px`;
+    // Check if it goes off bottom
+    if (top + panelHeight > window.innerHeight) {
+      top = clientY - panelHeight - 15;
     }
+
+    // Check if it goes off right
+    if (left + panelWidth > window.innerWidth) {
+      left = clientX - panelWidth - 15;
+    }
+
+    // Final boundary checks just in case
+    top = Math.max(10, top);
+    left = Math.max(10, left);
+
+    panel.style.top = `${top}px`;
+    panel.style.left = `${left}px`;
   }
 
   // Message Listener
